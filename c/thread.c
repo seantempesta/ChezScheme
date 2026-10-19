@@ -24,7 +24,23 @@ static s_thread_rv_t start_thread(void *tc);
 static IBOOL destroy_thread(ptr tc);
 #endif
 
+#if defined(__APPLE__) && defined(__arm64__) && !defined(WRITE_XOR_EXECUTE_CODE)
+/* A forked child runs on a copy of the forking thread, and XNU gives that copy
+   the thread's MAP_JIT view (pthread_jit_write_protect_np) as the kernel last
+   SAVED it, at the thread's last context switch, not its live value. A thread
+   descheduled while it wrote code (a collection enables code writes for its
+   length) that re-protected afterwards without another switch forks a child
+   whose code pages are writable and not executable: the child's first
+   instruction back in Scheme faults (SIGBUS, pc = fault address). Re-protect
+   in every child before it returns to Scheme. */
+static void fork_child_reprotect_code(void) { S_ENABLE_CODE_WRITE(0); }
+#endif
+
 void S_thread_init(void) {
+#if defined(__APPLE__) && defined(__arm64__) && !defined(WRITE_XOR_EXECUTE_CODE)
+  { static int registered = 0;
+    if (!registered) { registered = 1; pthread_atfork(NULL, NULL, fork_child_reprotect_code); } }
+#endif
   if (S_boot_time) {
     S_protect(&S_G.threadno);
     S_G.threadno = FIX(0);

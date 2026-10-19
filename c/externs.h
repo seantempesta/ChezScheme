@@ -408,6 +408,10 @@ extern void S_adjustmembytes(iptr amt);
 extern void S_move_to_chunk_list(chunkinfo *chunk, chunkinfo **pchunk_list);
 extern void S_thread_start_code_write(ptr tc, IGEN maxg, IBOOL current, void *hint, uptr hint_len);
 extern void S_thread_end_code_write(ptr tc, IGEN maxg, IBOOL current, void *hint, uptr hint_len);
+#if defined(__APPLE__) && defined(__arm64__) && !defined(WRITE_XOR_EXECUTE_CODE)
+extern void S_share_static_code(void);
+extern iptr S_static_code_moved_bytes;
+#endif
 
 /* stats.c */
 extern void S_stats_init(void);

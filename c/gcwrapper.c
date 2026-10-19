@@ -1322,6 +1322,13 @@ ptr S_gc(ptr tc, IGEN max_cg, IGEN min_tg, IGEN max_tg, ptr count_roots) {
       || S_G.enable_object_counts || S_G.enable_object_backreferences
       || (count_roots != Sfalse)) {
     if (S_G.enable_object_backreferences) min_tg = max_tg;
+#if defined(__APPLE__) && defined(__arm64__) && !defined(WRITE_XOR_EXECUTE_CODE)
+    if (max_tg == static_generation) {
+      ptr r = S_gc_oce(tc, max_cg, min_tg, max_tg, count_roots);
+      S_share_static_code();
+      return r;
+    }
+#endif
     return S_gc_oce(tc, max_cg, min_tg, max_tg, count_roots);
 #if defined(PTHREADS)
   } else if ((S_collect_waiting_threads != 0)

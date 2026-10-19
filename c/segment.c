@@ -742,3 +742,82 @@ static void enable_code_write(ptr tc, IGEN maxg, IBOOL on, IBOOL current, void *
   }
 }
 #endif
+
+#if defined(__APPLE__) && defined(__arm64__) && !defined(WRITE_XOR_EXECUTE_CODE)
+/* Static code leaves MAP_JIT (macOS arm64).
+
+   XNU copies every resident page of a MAP_JIT mapping into the child at
+   fork() (the child's entry is SM_PRIVATE, never copy-on-write), so a forked
+   child pays the whole code heap in memory and in fork latency. Code in the
+   static generation is never moved or written again, so it does not need a
+   writable mapping at all. After each collection into the static generation,
+   this moves every static code segment out of the MAP_JIT mapping in place:
+   the bytes are copied aside, the range is replaced (MAP_FIXED) by ordinary
+   anonymous memory, the bytes are copied back and the range is made r-x.
+   Addresses do not change, so nothing is relocated, and fork shares these
+   pages copy-on-write. Runs inside the collection, every other Scheme thread
+   stopped. CHEZ_SHARE_STATIC_CODE=0 disables it. */
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <libkern/OSCacheControl.h>
+
+static int static_code_still_jit(void *addr) {
+  mach_vm_address_t a = (mach_vm_address_t)addr; mach_vm_size_t s;
+  vm_region_basic_info_data_64_t b; mach_msg_type_number_t c = VM_REGION_BASIC_INFO_COUNT_64; mach_port_t o;
+  if (mach_vm_region(mach_task_self(), &a, &s, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&b, &c, &o) != KERN_SUCCESS)
+    return 0;
+  return (b.protection & VM_PROT_WRITE) != 0; /* MAP_JIT code reports rwx; moved code reports r-x */
+}
+
+static void move_static_code_run(void *addr, uptr bytes) {
+  void *tmp = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (tmp == MAP_FAILED) S_error_abort("share-static-code: mmap of copy failed");
+  memcpy(tmp, addr, bytes);
+  if (mmap(addr, bytes, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0) != addr)
+    S_error_abort("share-static-code: MAP_FIXED over code failed");
+  memcpy(addr, tmp, bytes);
+  if (mprotect(addr, bytes, PROT_READ | PROT_EXEC) != 0)
+    S_error_abort("share-static-code: mprotect r-x failed");
+  sys_icache_invalidate(addr, bytes);
+  munmap(tmp, bytes);
+}
+
+static int share_static_code_enabled = -1;
+iptr S_static_code_moved_bytes = 0;
+
+void S_share_static_code(void) {
+  chunkinfo *chunk; ptr ls; iptr i, j;
+  if (share_static_code_enabled < 0) {
+    const char *e = getenv("CHEZ_SHARE_STATIC_CODE");
+    share_static_code_enabled = !(e && e[0] == '0');
+  }
+  if (!share_static_code_enabled) return;
+
+  /* Close off every thread's static code allocation area, so no later
+     collection lays an end-of-segment marker into a moved segment. */
+  S_ENABLE_CODE_WRITE(1);
+  for (ls = S_threads; ls != Snil; ls = Scdr(ls)) {
+    ptr t_tc = (ptr)THREADTC(Scar(ls));
+    if (THREAD_GC(t_tc)->base_loc[static_generation][space_code])
+      S_close_off_thread_local_segment(t_tc, space_code, static_generation);
+  }
+  S_ENABLE_CODE_WRITE(0);
+
+  for (i = -1; i <= PARTIAL_CHUNK_POOLS; i++) {
+    for (chunk = (i < 0 ? S_code_chunks_full : S_code_chunks[i]); chunk != NULL; chunk = chunk->next) {
+      j = 0;
+      while (j < chunk->segs) {
+        iptr k = j;
+        while (k < chunk->segs && chunk->sis[k].generation == static_generation && chunk->sis[k].space == space_code
+               && static_code_still_jit(TO_VOIDP(build_ptr(chunk->base + k, 0))))
+          k++;
+        if (k > j) {
+          move_static_code_run(TO_VOIDP(build_ptr(chunk->base + j, 0)), (k - j) * bytes_per_segment);
+          S_static_code_moved_bytes += (k - j) * bytes_per_segment;
+          j = k;
+        } else j++;
+      }
+    }
+  }
+}
+#endif
