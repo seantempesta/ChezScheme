@@ -918,6 +918,14 @@ ptr S_bytevector_compress(ptr dest_bv, iptr d_start, iptr d_count,
 ptr S_bytevector_uncompress(ptr dest_bv, iptr d_start, iptr d_count,
                             ptr src_bv, iptr s_start, iptr s_count,
                             INT compress_format) {
+  return S_bytes_uncompress(&BVIT(dest_bv, d_start), d_count,
+                            &BVIT(src_bv, s_start), s_count, compress_format);
+}
+
+/* S_bytevector_uncompress over raw memory, for a source that is not a
+   bytevector (a boot registered as bytes, read in place) */
+ptr S_bytes_uncompress(octet *dest, iptr d_count, octet *src, iptr s_count,
+                       INT compress_format) {
   /* On error, an message-template string with ~s for the bytevector */
   switch (compress_format) {
     case COMPRESS_GZIP:
@@ -930,7 +938,7 @@ ptr S_bytevector_uncompress(ptr dest_bv, iptr d_start, iptr d_count,
 
         destLen = (uLongf)d_count;
 
-        r = uncompress(&BVIT(dest_bv, d_start), &destLen, &BVIT(src_bv, s_start), (uLong)s_count);
+        r = uncompress(dest, &destLen, src, (uLong)s_count);
 
         if (r == Z_OK)
           return FIX(destLen);
@@ -948,7 +956,7 @@ ptr S_bytevector_uncompress(ptr dest_bv, iptr d_start, iptr d_count,
         if (!is_valid_lz4_length(d_count))
           return Sstring("expected result size of uncompressed source ~s is too large");
 
-        r = LZ4_decompress_safe((char *)&BVIT(src_bv, s_start), (char *)&BVIT(dest_bv, d_start), (int)s_count, (int)d_count);
+        r = LZ4_decompress_safe((char *)src, (char *)dest, (int)s_count, (int)d_count);
 
         if (r >= 0)
           return Sfixnum(r);

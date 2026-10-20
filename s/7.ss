@@ -809,9 +809,13 @@
   (define start-bytes 0)
   (define allocated-after-max 0)
   (define docollect
-    (let ([do-gc (foreign-procedure "(cs)do_gc" (int int int ptr) ptr)])
+    (let ([do-gc (foreign-procedure "(cs)do_gc" (int int int ptr) ptr)]
+          [convert-native-threads (foreign-procedure "(cs)convert_native_threads" () iptr)])
       (lambda (p)
         (with-tc-mutex
+          ;; a thread in a collect-safe call stays counted until someone
+          ;; looks (c/thread.c Sdeactivate_thread): count it out first
+          (convert-native-threads)
           (unless (= $active-threads 1)
             ($oops 'collect "cannot collect when multiple threads are active"))
           (let-values ([(trip g gmintarget gmaxtarget count-roots reset-alloc-after?)

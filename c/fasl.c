@@ -443,6 +443,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
       faslFile in_f;
       ptr bv = (ptr)0; IFASLCODE kind;
       int old_mode = FASL_BUFFER_READ_ALL;
+      void *boot_buf = NULL; iptr boot_buf_size = 0;
 
       ty = S_fasl_bytein(f);
       kind = S_fasl_bytein(f); /* fasl or vfasl */
@@ -465,11 +466,56 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
           if ((uptr)src_size > (uptr)maximum_bytevector_length ||
               (uptr)dest_size > (uptr)maximum_bytevector_length)
             toolarge(f->uf.path);
-          PREPARE_BYTEVECTOR(SRCBV(tc), src_size);
+          if (S_vfasl_boot_mode) {
+            /* A boot entry is uncompressed into memory outside the collected
+               heap and released as soon as the entry is loaded. In the heap,
+               each entry's buffer was a large contiguous object freed by the
+               compaction before the next entry, so the static image built
+               around it was left with holes no later buffer fit, and a boot
+               held a chunk or more of empty segments per few entries. */
+            void *src_buf = NULL; octet *src;
+            boot_buf_size = dest_size;
+            boot_buf = S_getmem(dest_size, 0, 0);
+            if (f->uf.type == UFFO_TYPE_BV && f->end - f->next >= src_size) {
+              src = f->next;
+            } else {
+              src_buf = S_getmem(src_size, 0, 0);
+              S_fasl_bytesin(src_buf, src_size, f);
+              src = src_buf;
+            }
+            result = S_bytes_uncompress(boot_buf, dest_size, src, src_size,
+                        (ty == fasl_type_gzip ? COMPRESS_GZIP : COMPRESS_LZ4));
+            if (src_buf != NULL) S_freemem(src_buf, src_size, 0);
+            else f->next += src_size;
+            if (result != FIX(dest_size)) {
+              S_freemem(boot_buf, boot_buf_size, 0);
+              if (Sstringp(result)) S_error2("fasl-read", "~@?", result, f->uf.path);
+              S_error3("fasl-read", "uncompressed size ~s for ~s is smaller than expected size ~s", result, f->uf.path, FIX(dest_size));
+            }
+            S_fasl_init_bytes(&bv_ffo, f->uf.path, boot_buf, dest_size);
+            size = dest_size;
+            in_f = &bv_ffo;
+            break;
+          }
           PREPARE_BYTEVECTOR(DSTBV(tc), dest_size);
-          S_fasl_bytesin(&BVIT(SRCBV(tc),0), src_size, f);
-          result = S_bytevector_uncompress(DSTBV(tc), 0, dest_size, SRCBV(tc), 0, src_size,
-                      (ty == fasl_type_gzip ? COMPRESS_GZIP : COMPRESS_LZ4));
+          if (f->uf.type == UFFO_TYPE_BV && f->end - f->next >= src_size) {
+            /* the source is already contiguous in memory (a boot registered
+               as bytes): uncompress it in place rather than first copying it
+               into SRCBV, which during a boot load is that much more heap
+               held at once */
+            result = S_bytes_uncompress(&BVIT(DSTBV(tc),0), dest_size, f->next, src_size,
+                        (ty == fasl_type_gzip ? COMPRESS_GZIP : COMPRESS_LZ4));
+            if (result != FIX(dest_size)) {
+              PREPARE_BYTEVECTOR(SRCBV(tc), src_size);
+              memcpy(&BVIT(SRCBV(tc),0), f->next, src_size);
+            }
+            f->next += src_size;
+          } else {
+            PREPARE_BYTEVECTOR(SRCBV(tc), src_size);
+            S_fasl_bytesin(&BVIT(SRCBV(tc),0), src_size, f);
+            result = S_bytevector_uncompress(DSTBV(tc), 0, dest_size, SRCBV(tc), 0, src_size,
+                        (ty == fasl_type_gzip ? COMPRESS_GZIP : COMPRESS_LZ4));
+          }
           if (result != FIX(dest_size)) {
             if (Sstringp(result)) S_error2("fasl-read", "~@?", result, SRCBV(tc));
             S_error3("fasl-read", "uncompressed size ~s for ~s is smaller than expected size ~s", result, SRCBV(tc), FIX(dest_size));
@@ -501,7 +547,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
           faslin(tc, &x, externals, &strbuf, in_f);
           break;
         case fasl_type_vfasl:
-          x = S_vfasl(bv, in_f, 0, size);
+          x = (boot_buf != NULL) ? S_vfasl_bytes(boot_buf, in_f, 0, size) : S_vfasl(bv, in_f, 0, size);
           break;
         default:
           S_error2("", "malformed fasl-object header (got ~s) found in ~a", FIX(ty), f->uf.path);
@@ -509,6 +555,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
       }
       if (old_mode == FASL_BUFFER_READ_MINIMAL)
         in_f->buffer_mode = old_mode;
+      if (boot_buf != NULL) S_freemem(boot_buf, boot_buf_size, 0);
       S_flush_instruction_cache(tc);
       S_thread_end_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
       return x;

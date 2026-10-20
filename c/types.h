@@ -367,14 +367,14 @@ typedef struct {
    can proceed.  if we happen to be the collecting thread, the active
    thread count is zero, in which case we don't signal.  collection
    is not permitted to happen when interrupts are disabled, so we
-   don't let anything happen in that case. */
+   don't let anything happen in that case.
+
+   The code an inactive thread returns into is not locked here: S_do_gc
+   locks it for every inactive thread, for the one stretch it could
+   move (lock_inactive_threads_code in gcwrapper.c). */
 #define deactivate_thread_signal_collect(tc, check_collect) {  \
   if (ACTIVE(tc)) {\
-    ptr code;\
     tc_mutex_acquire();\
-    code = CP(tc);\
-    if (Sprocedurep(code)) CP(tc) = code = CLOSCODE(code);\
-    Slock_object(code);\
     SETSYMVAL(S_G.active_threads_id,\
      FIX(UNFIX(SYMVAL(S_G.active_threads_id)) - 1));\
     if (check_collect \
@@ -393,7 +393,6 @@ typedef struct {
     tc_mutex_acquire();                         \
     SETSYMVAL(S_G.active_threads_id,\
      FIX(UNFIX(SYMVAL(S_G.active_threads_id)) + 1));\
-    Sunlock_object(CP(tc));\
     ACTIVE(tc) = 1;\
     tc_mutex_release()\
   }\
@@ -464,8 +463,17 @@ typedef struct {
 #define AS_IMPLICIT_ATOMIC(T, X) X
 #endif
 
+/* thread_gc.native_state: a thread in a collect-safe foreign call (or in
+   C after a collect-safe callable returns) that has not given up its
+   place in $active-threads; see Sdeactivate_thread in thread.c. */
+#define native_running   0
+#define native_in_native 1  /* in C, still counted active */
+#define native_converted 2  /* in C, deactivated on its behalf */
+
 typedef struct thread_gc {
   ptr tc;
+
+  volatile uptr native_state;
 
   int during_alloc;
   IBOOL queued_fire;

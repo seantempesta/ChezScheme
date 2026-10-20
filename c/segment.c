@@ -404,8 +404,13 @@ static seginfo *allocate_segments(uptr nreq, UNUSED IBOOL for_code) {
     base = addr_get_segment((uptr)TO_PTR(addr) + bytes_per_segment - 1);
   /* if the base of the first segment is the same as the base of the chunk, and
      the last segment isn't the last segment in memory (which could cause 'next' and 'end'
-     pointers to wrap), we've actually got nact + 1 usable segments in this chunk */
-  if (build_ptr(base, 0) == TO_PTR(addr) && base + nact != ((uptr)1 << (ptr_bits - segment_offset_bits)) - 1)
+     pointers to wrap), we've actually got nact + 1 usable segments in this chunk.
+     An oversize chunk keeps the spare unused: it is released as soon as its one
+     object dies (gc.c), unless something else took the spare in the meantime, and
+     a static allocation there (vfasl boot loading does them while its temporary
+     buffers live) pins the whole chunk for the life of the process. */
+  if (nreq <= minimum_segment_request
+      && build_ptr(base, 0) == TO_PTR(addr) && base + nact != ((uptr)1 << (ptr_bits - segment_offset_bits)) - 1)
     nact += 1;
 
   chunk = S_getmem(sizeof(chunkinfo) + sizeof(seginfo) * nact, 0, 0);

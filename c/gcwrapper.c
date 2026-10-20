@@ -1184,13 +1184,65 @@ void S_fixup_counts(ptr counts) {
   RTDCOUNTSTIMESTAMP(counts) = S_G.gctimestamp[0];
 }
 
+#ifdef PTHREADS
+/* An inactive thread is in C (a collect-safe foreign call, a condition
+   wait), and the C stack holds a return address into the code it came
+   from, which the collector cannot see. Deactivation used to lock that
+   code on every call; it is locked here instead, for the one stretch
+   it could move, and only for the threads that are inactive now. The
+   collector holds the tc mutex, so no thread can come back to Scheme
+   (reactivate_thread waits for the mutex) until it is unlocked. */
+static int compare_code_ptrs(const void *a, const void *b) {
+  uptr x = (uptr)*(const ptr *)a, y = (uptr)*(const ptr *)b;
+  return x < y ? -1 : x > y;
+}
+
+static ptr *lock_inactive_threads_code(ptr tc, iptr *n) {
+  ptr ls, *locked; iptr i = 0, j, k;
+  locked = (ptr *)malloc(sizeof(ptr) * (S_nthreads + 1));
+  if (locked == NULL) S_error_abort("out of memory locking inactive threads' code");
+  for (ls = S_threads; ls != Snil; ls = Scdr(ls)) {
+    ptr t_tc = (ptr)THREADTC(Scar(ls));
+    if (t_tc != tc && !ACTIVE(t_tc)) {
+      ptr code = CP(t_tc);
+      if (code != (ptr)0 && !FIXMEDIATE(code)) {
+        if (Sprocedurep(code)) CP(t_tc) = code = CLOSCODE(code);
+        locked[i++] = code;
+      }
+    }
+  }
+  /* Threads parked in the same place share one code object (a thousand
+     workers waiting in one loop), and every lock is an entry on a list the
+     unlock scans: lock each object once. */
+  qsort(locked, i, sizeof(ptr), compare_code_ptrs);
+  for (j = 0, k = 0; j < i; j += 1) {
+    if (k == 0 || locked[j] != locked[k - 1]) locked[k++] = locked[j];
+  }
+  for (j = 0; j < k; j += 1) Slock_object(locked[j]);
+  *n = k;
+  return locked;
+}
+
+static void unlock_inactive_threads_code(ptr *locked, iptr n) {
+  iptr i;
+  for (i = 0; i < n; i += 1) Sunlock_object(locked[i]);
+  free(locked);
+}
+#endif
+
 ptr S_do_gc(IGEN max_cg, IGEN min_tg, IGEN max_tg, ptr count_roots) {
   ptr tc = get_thread_context();
   ptr code, result;
+#ifdef PTHREADS
+  ptr *inactive_code; iptr inactive_count;
+#endif
 
   code = CP(tc);
   if (Sprocedurep(code)) code = CLOSCODE(code);
   Slock_object(code);
+#ifdef PTHREADS
+  inactive_code = lock_inactive_threads_code(tc, &inactive_count);
+#endif
 
  /* Scheme side grabs mutex before calling S_do_gc */
   THREAD_GC(tc)->during_alloc += 1;
@@ -1312,6 +1364,10 @@ ptr S_do_gc(IGEN max_cg, IGEN min_tg, IGEN max_tg, ptr count_roots) {
 
   THREAD_GC(tc)->during_alloc -= 1;
 
+#ifdef PTHREADS
+  unlock_inactive_threads_code(inactive_code, inactive_count);
+  S_collections_done += 1;
+#endif
   Sunlock_object(code);
 
   return result;
