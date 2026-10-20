@@ -988,7 +988,10 @@
 (define (exact-integer-copy v n vfi)
   (if (<= (constant most-negative-fixnum) n (constant most-positive-fixnum))
       (fix n)
-      (let ([len (fxquotient (fx+ (integer-length n) (fx- (constant bigit-bits) 1)) (constant bigit-bits))])
+      ;; a bignum is stored as sign + magnitude: the bigits come from (abs n), as
+      ;; bitwise-bit-field of a negative n reads its two's-complement bits
+      (let* ([m (abs n)]
+             [len (fxquotient (fx+ (integer-length m) (fx- (constant bigit-bits) 1)) (constant bigit-bits))])
         (vector-copy v n vfi
                      (lambda (n) len)
                      vspace-data
@@ -1003,7 +1006,7 @@
                      (lambda (n i)
                        (let ([i (- len i 1)])
                          (let ([i (fx* i (constant bigit-bits))])
-                           (bitwise-bit-field n i (fx+ i (constant bigit-bits))))))))))
+                           (bitwise-bit-field m i (fx+ i (constant bigit-bits))))))))))
 
 (define (base-rtd-copy v vfi)
   (let ([new-p (or (vfasl-info-base-rtd vfi)
