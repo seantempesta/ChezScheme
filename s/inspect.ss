@@ -3096,6 +3096,7 @@
           (unless (list? x*) ($oops who "~s is not a list" x*))
           (let ([g (filter-generation who g)])
             (with-tc-mutex
+             ((foreign-procedure "(cs)convert_native_threads" () iptr))
              (unless (= $active-threads 1)
                ($oops who "cannot count when multiple threads are active"))
              (count_size_increments x* g)))]))))

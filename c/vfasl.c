@@ -89,7 +89,9 @@ static ptr lookup_singleton(iptr which);
 /************************************************************/
 /* Loading                                                  */
 
-ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
+/* BYTES is the image (a bytevector's data or memory outside the heap) or
+   NULL to read it from STREAM */
+static ptr vfasl_load(octet *bytes, faslFile stream, iptr offset, iptr input_len)
 {
   ptr vspaces[vspaces_count];
   uptr vspace_offsets[vspaces_count+1];
@@ -110,8 +112,8 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   if (used_len > input_len)
     S_error("fasl-read", "input length mismatch");
 
-  if (bv)
-    memcpy(&header_space, &BVIT(bv, offset), size_vfasl_header);
+  if (bytes)
+    memcpy(&header_space, bytes + offset, size_vfasl_header);
   else
     S_fasl_bytesin(header_space, size_vfasl_header, stream);
 
@@ -125,19 +127,25 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   }
   vspace_offsets[vspaces_count] = VFASLHEADER_DATA_SIZE(header);
 
-  bv_addr = (bv ? &BVIT(bv, size_vfasl_header + offset) : NULL);
+  bv_addr = (bytes ? bytes + size_vfasl_header + offset : NULL);
 
   to_static = (S_vfasl_boot_mode > 0);
   
   for (s = 0; s < vspaces_count; s++) {
     uptr sz = vspace_offsets[s+1] - vspace_offsets[s];
     if (sz > 0) {
-      if ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation) {
+      if ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation && bytes) {
+        /* relink_code only reads relocations it is about to drop, so read
+           them where they are rather than copying them into the heap */
+        vspaces[s] = TO_PTR(bv_addr);
+        bv_addr = TO_VOIDP(ptr_add(TO_PTR(bv_addr), sz));
+        continue;
+      } else if ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation) {
         newspace_find_room(tc, type_untyped, sz, vspaces[s]);
       } else {
         find_room(tc, vspace_spaces[s], (to_static ? static_generation : 0), type_untyped, sz, vspaces[s]);
       }
-      if (bv) {
+      if (bytes) {
         memcpy(TO_VOIDP(vspaces[s]), bv_addr, sz);
         bv_addr = TO_VOIDP(ptr_add(TO_PTR(bv_addr), sz));
       } else {
@@ -164,7 +172,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
       vspaces[s] = vspaces[s+1];
   }
 
-  if (bv)
+  if (bytes)
     table = TO_PTR(bv_addr);
   else {
     newspace_find_room(tc, type_untyped, ptr_align(VFASLHEADER_TABLE_SIZE(header)), table);
@@ -458,6 +466,16 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
 
     return v;
   }
+}
+
+ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
+{
+  return vfasl_load(bv ? (octet *)&BVIT(bv, 0) : NULL, stream, offset, input_len);
+}
+
+ptr S_vfasl_bytes(void *bytes, faslFile stream, iptr offset, iptr input_len)
+{
+  return vfasl_load(bytes, stream, offset, input_len);
 }
 
 ptr S_vfasl_to(ptr bv)

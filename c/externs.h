@@ -140,6 +140,7 @@ extern void S_fasl_bytesin(octet *s, iptr n, faslFile f);
 
 /* vfasl.c */
 extern ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr len);
+extern ptr S_vfasl_bytes(void *bytes, faslFile stream, iptr offset, iptr len);
 extern ptr S_vfasl_to(ptr v);
 
 /* flushcache.c */
@@ -280,11 +281,15 @@ extern ptr S_bytevector_compress(ptr dest_bv, iptr d_start, iptr d_count,
 extern ptr S_bytevector_uncompress(ptr dest_bv, iptr d_start, iptr d_count,
                                    ptr src_bv, iptr s_start, iptr s_count,
                                    INT compress_format);
+extern ptr S_bytes_uncompress(octet *dest, iptr d_count, octet *src, iptr s_count,
+                              INT compress_format);
 
 /* thread.c */
 extern void S_thread_init(void);
 extern ptr S_create_thread_object(const char *who, ptr p_tc);
+extern iptr S_convert_native_threads(void);
 #ifdef PTHREADS
+extern uptr S_collections_done;
 extern ptr S_fork_thread(ptr thunk);
 extern ptr S_make_mutex(void);
 extern void S_mutex_free(scheme_mutex_t *m);
@@ -296,6 +301,7 @@ extern s_thread_cond_t *S_make_condition(void);
 extern void S_condition_free(s_thread_cond_t *c);
 extern IBOOL S_condition_wait(s_thread_cond_t *c, scheme_mutex_t *m, ptr t);
 extern INT S_activate_thread(void);
+extern INT S_lockfree_activation(void);
 extern void S_unactivate_thread(int mode);
 #endif
 

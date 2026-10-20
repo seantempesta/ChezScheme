@@ -195,6 +195,10 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)maxmembytes", (void *)S_maxmembytes);
     Sforeign_symbol("(cs)resetmaxmembytes", (void *)S_resetmaxmembytes);
     Sforeign_symbol("(cs)do_gc", (void *)S_do_gc);
+#ifdef PTHREADS
+    Sforeign_symbol("(cs)lockfree_activation", (void *)S_lockfree_activation);
+#endif
+    Sforeign_symbol("(cs)convert_native_threads", (void *)S_convert_native_threads);
     Sforeign_symbol("(cs)check_heap_enabledp", (void *)s_check_heap_enabledp);
     Sforeign_symbol("(cs)enable_check_heap", (void *)s_enable_check_heap);
     Sforeign_symbol("(cs)check_heap_errors", (void *)s_check_heap_errors);

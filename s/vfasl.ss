@@ -43,6 +43,7 @@
           (mutable symbols)    ; intern symbols (because multiple fasl blocks may be combined)
           (mutable rtds)       ; intern rtds (same reason)
           (mutable strings)    ; intern certain strings (for code names)
+          (mutable mstrings)   ; first record seen for each mutable string's content
 
           (mutable installs-library-entry?)) ; to determine whether vfasls can be combined
   (nongenerative))
@@ -74,6 +75,7 @@
                    #f
                    (make-eq-hashtable)
                    (make-eq-hashtable)
+                   (make-hashtable string-hash string=?)
                    (make-hashtable string-hash string=?)
 
                    #f)) ; installs-library-entry?
@@ -640,7 +642,20 @@
              (make-vsingleton (if immutable?
                                   (constant singleton-null-immutable-string)
                                   (constant singleton-null-string)))]
+            ;; Equal string constants share one object in the image: the first
+            ;; record seen for a content is copied and the rest point at it, the
+            ;; table string-copy keeps for code names included. A compiled
+            ;; file holds one fasl entry per top-level form and every literal is
+            ;; its own object, so one name repeats by the hundreds; the image
+            ;; combines the entries, so this is where the copies can meet.
+            ;; Literals are constants (R6RS 5.10), so sharing them is not
+            ;; observable to a program that does not mutate one. Mutable and
+            ;; immutable strings stay apart, so each keeps the flag it had.
+            [(let ([first (hashtable-ref (string-table immutable? vfi) string #f)])
+               (and first (not (eq? first v)) first))
+             => (lambda (first) (copy first vfi))]
             [else
+             (hashtable-set! (string-table immutable? vfi) string v)
              (vector-copy v string vfi
                           string-length
                           vspace-data
@@ -967,6 +982,9 @@
     (lambda (name)
       (bitwise-and (symbol-hashX (if (pair? name) (car name) name))
                    (constant most-positive-fixnum)))))
+
+(define (string-table immutable? vfi)
+  (if immutable? (vfasl-info-strings vfi) (vfasl-info-mstrings vfi)))
 
 (define (string-copy name vfi)
   ;; interns `name` so that symbols and code share
