@@ -2060,7 +2060,9 @@
                                 (string->immutable-string "") (vector->immutable-vector '#())
                                 (bytevector->immutable-bytevector '#vu8())
                                 (make-ftype-pointer ftype-pointer 16)
-                                (make-ftype-scheme-object-pointer #t 1)))
+                                (make-ftype-scheme-object-pointer #t 1)
+                                ;; a non-empty fxvector keeps its length
+                                (fxvector -1 5 7)))
     (define (same-vfasl-content? v)
       (andmap (lambda (a b)
                 (or (eqv? a b)
@@ -2072,6 +2074,7 @@
                              (and (vector? a)
                                   (positive? (vector-length a)))
                              (box? a)
+                             (and (fxvector? a) (positive? (fxvector-length a)))
                              (stencil-vector? a))
                          (equal? a b))
                     (and (vfasl-demo? a)
