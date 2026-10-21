@@ -436,6 +436,13 @@ typedef struct {
 static gc_sweeper sweepers[maximum_parallel_collect_threads+1];
 static int num_sweepers;
 
+/* The sweeper pool's size. Unset (-1), a collection starts a sweeper for each thread
+   waiting in it, up to MAX_SWEEPERS, and keeps it, so the pool is as big as the most
+   threads any one collection happened to find waiting: a number that depends on timing.
+   S_collect_sweepers(n) fixes it at n: the n are started then, and no collection
+   starts another. */
+static int sweepers_fixed = -1;
+
 # define PARALLEL_UNUSED    UNUSED
 # define NO_PARALLEL_UNUSED /* empty */
 
@@ -2987,14 +2994,15 @@ static void assign_sweeper(int n, thread_gc *t_tgc) {
 
 static void setup_sweepers(thread_gc *tgc) {
   int i, n, next = 0;
+  int limit = (sweepers_fixed < 0) ? MAX_SWEEPERS : sweepers_fixed;
   ptr ls;
 
   assign_sweeper(main_sweeper_index, tgc);
 
   /* assign a tc for each sweeper to run in parallel */
-  for (n = 0, i = 0; (n < MAX_SWEEPERS) && (i < S_collect_waiting_threads); i++) {
+  for (n = 0, i = 0; (n < limit) && (i < S_collect_waiting_threads); i++) {
     if ((i < MAX_SWEEPERS) && (S_collect_waiting_tcs[i] != (ptr)0)) {
-      if (sweeper_started(n, 1)) {
+      if (sweeper_started(n, sweepers_fixed < 0)) {
         assign_sweeper(n, THREAD_GC(S_collect_waiting_tcs[i]));
         n++;
       } else
@@ -3009,7 +3017,7 @@ static void setup_sweepers(thread_gc *tgc) {
     thread_gc *t_tgc = THREAD_GC(THREADTC(Scar(ls)));
     t_tgc->during_alloc += 1;
     if ((t_tgc != tgc) && (t_tgc->sweeper == main_sweeper_index)) {
-      if ((n < MAX_SWEEPERS) && sweeper_started(n, 0)) {
+      if ((n < limit) && sweeper_started(n, 0)) {
         assign_sweeper(n, t_tgc);
         n++;
         next = n;
@@ -3089,6 +3097,26 @@ static IBOOL sweeper_started(int i, IBOOL start_new) {
   }
 
   return 1;
+}
+
+/* (cs)collect_sweepers: n >= 0 fixes the sweeper pool at n (at most MAX_SWEEPERS),
+   starting the ones not yet running; from then on no collection starts a sweeper. A
+   sweeper already running is never stopped, so the answer is the number running after
+   the call, for the caller to compare with n. n < 0 only answers that number. */
+iptr S_collect_sweepers(iptr n) {
+  int i, count = 0;
+
+  tc_mutex_acquire();
+  if (n >= 0) {
+    sweepers_fixed = (n > MAX_SWEEPERS) ? MAX_SWEEPERS : (int)n;
+    for (i = 0; i < sweepers_fixed; i++)
+      if (!sweeper_started(i, 1)) break;
+  }
+  for (i = 0; i < MAX_SWEEPERS; i++)
+    if (sweepers[i].status != SWEEPER_NONE) count++;
+  tc_mutex_release();
+
+  return count;
 }
 
 static void run_sweepers(void) {

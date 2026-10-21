@@ -212,6 +212,9 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)locked_objects", (void *)S_locked_objects);
     Sforeign_symbol("(cs)maxgen", (void *)S_maxgen);
     Sforeign_symbol("(cs)set_maxgen", (void *)S_set_maxgen);
+#if defined(PTHREADS)
+    Sforeign_symbol("(cs)collect_sweepers", (void *)S_collect_sweepers);
+#endif
     Sforeign_symbol("(cs)minfreegen", (void *)S_minfreegen);
     Sforeign_symbol("(cs)set_minmarkgen", (void *)S_set_minmarkgen);
     Sforeign_symbol("(cs)minmarkgen", (void *)S_minmarkgen);
