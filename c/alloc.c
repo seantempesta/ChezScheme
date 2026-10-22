@@ -200,6 +200,15 @@ ptr S_compute_bytes_allocated(ptr xg, ptr xs) {
   return Sunsigned(n);
 }
 
+/* the calling thread's allocation so far (thread_gc.mutator_bytes), less the unused part of
+   its current allocation area: a cheap, thread-local counterpart of S_compute_bytes_allocated */
+uptr S_thread_bytes_allocated(void) {
+  ptr tc = get_thread_context();
+  uptr n = THREAD_GC(tc)->mutator_bytes;
+  if (AP(tc) != (ptr)0) n -= (uptr)REAL_EAP(tc) - (uptr)AP(tc);
+  return n;
+}
+
 ptr S_bytes_finalized() {
   return Sunsigned(S_G.bytes_finalized);
 }
@@ -345,6 +354,7 @@ void S_reset_allocation_pointer(ptr tc) {
 
   S_G.bytes_of_space[0][space_new] += bytes_per_segment;
   S_G.bytes_of_generation[0] += bytes_per_segment;
+  tgc->mutator_bytes += bytes_per_segment;
 
   if (tgc->during_alloc == 1) maybe_queue_fire_collector(THREAD_GC(tc));
 
@@ -483,6 +493,7 @@ void S_scan_remembered_set(void) {
     uptr bytes = eap - ap;
     S_G.bytes_of_space[0][space_new] -= bytes;
     S_G.bytes_of_generation[0] -= bytes;
+    THREAD_GC(tc)->mutator_bytes -= bytes;
     S_reset_allocation_pointer(tc);
   }
 
@@ -531,16 +542,19 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
       uptr bytes = eap - ap;
       S_G.bytes_of_space[0][space_new] -= bytes;
       S_G.bytes_of_generation[0] -= bytes;
+      THREAD_GC(tc)->mutator_bytes -= bytes;
       S_reset_allocation_pointer(tc);
     }
   } else if (eap - ap > alloc_waste_maximum) {
     AP(tc) = (ptr)ap;
     EAP(tc) = (ptr)eap;
     find_room(tc, space_new, 0, type, size, x);
+    THREAD_GC(tc)->mutator_bytes += size;
   } else {
     uptr bytes = eap - ap;
     S_G.bytes_of_space[0][space_new] -= bytes;
     S_G.bytes_of_generation[0] -= bytes;
+    THREAD_GC(tc)->mutator_bytes -= bytes;
     S_reset_allocation_pointer(tc);
     ap = (uptr)AP(tc);
     if (size + alloc_waste_maximum <= (uptr)EAP(tc) - ap) {
@@ -548,6 +562,7 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
       AP(tc) = (ptr)(ap + size);
     } else {
       find_room(tc, space_new, 0, type, size, x);
+      THREAD_GC(tc)->mutator_bytes += size;
     }
   }
 

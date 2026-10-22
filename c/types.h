@@ -477,6 +477,10 @@ typedef struct thread_gc {
 
   int during_alloc;
   IBOOL queued_fire;
+
+  /* bytes this thread's own code has allocated (its allocation areas, less the tails it
+     dropped, and its large objects), never the collector's copying: S_thread_bytes_allocated */
+  uptr mutator_bytes;
   IBOOL preserve_ownership;
 
   struct thread_gc *next;

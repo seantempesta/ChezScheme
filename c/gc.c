@@ -935,6 +935,8 @@ ptr GCENTRY(ptr tc, ptr count_roots_ls) {
       ptr t_tc = (ptr)THREADTC(Scar(ls));
       thread_gc *t_tgc = THREAD_GC(t_tc);
       S_scan_dirty(TO_VOIDP(EAP(t_tc)), TO_VOIDP(REAL_EAP(t_tc)));
+      /* the unused tail of the area it drops was never this thread's allocation */
+      if (AP(t_tc) != (ptr)0) t_tgc->mutator_bytes -= (uptr)REAL_EAP(t_tc) - (uptr)AP(t_tc);
       EAP(t_tc) = REAL_EAP(t_tc) = AP(t_tc) = (ptr)0;
 
       /* clear thread-local allocation: */

@@ -66,6 +66,7 @@ extern void S_reset_scheme_stack(ptr tc, iptr n);
 extern void S_reset_allocation_pointer(ptr tc); /* call S_maybe_fire_collector afterward outside alloc mutex */
 extern void S_maybe_fire_collector(thread_gc *tgc);
 extern ptr S_compute_bytes_allocated(ptr xg, ptr xs);
+extern uptr S_thread_bytes_allocated(void);
 extern ptr S_bytes_finalized();
 extern ptr S_find_more_room(ISPC s, IGEN g, iptr n, ptr old);
 extern void S_record_new_dirty_card(thread_gc *tgc, ptr *ppp, IGEN to_g);

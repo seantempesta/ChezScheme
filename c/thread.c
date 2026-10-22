@@ -135,6 +135,7 @@ ptr S_create_thread_object(const char *who, ptr p_tc) {
   }
 
   tgc->sweeper = main_sweeper_index;
+  tgc->mutator_bytes = 0;
 
   /* override nonclonable tc fields */
   THREADNO(tc) = S_G.threadno;
