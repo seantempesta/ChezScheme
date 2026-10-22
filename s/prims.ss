@@ -2156,6 +2156,13 @@
       (let ([r (cw caddr maddr t)])
         (keep-live c)
         (keep-live m)
+        ;; a signal ends the wait (pthread_cond_wait returns after its C handler,
+        ;; a spurious wakeup): its Scheme handlers run now, as the event handler
+        ;; runs them, before the caller checks its predicate and waits again
+        (when (and ($tc-field 'signal-interrupt-pending ($tc))
+                   (fx= ($tc-field 'disable-count ($tc)) 0))
+          ($tc-field 'signal-interrupt-pending ($tc) #f)
+          (for-each $signal-interrupt-handler ($dequeue-scheme-signals ($tc))))
         r))]))
 
 (set! condition-broadcast

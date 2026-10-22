@@ -1693,6 +1693,25 @@
    (void))
 )
 
+;; A signal sent to the main thread while it waits in condition-wait runs its
+;; handler before the waiter checks its predicate again: pthread_cond_wait
+;; returns after the signal (a spurious wakeup) and condition-wait runs the
+;; pending Scheme handlers on its way out. The helper thread's late broadcast
+;; only ends a run where the handler never ran.
+(mat signal-wakes-condition-wait
+  (let ([m (make-mutex)] [c (make-condition)] [got #f] [gave-up #f])
+    (register-signal-handler 14 (lambda (sig) (set! got #t)))
+    (fork-thread
+      (lambda ()
+        (sleep (make-time 'time-duration 100000000 0))
+        (system "exec kill -14 $PPID")
+        (sleep (make-time 'time-duration 0 5))
+        (with-mutex m (set! gave-up #t) (condition-broadcast c))))
+    (with-mutex m
+      (let loop () (unless (or got gave-up) (condition-wait c m) (loop))))
+    (and got (not gave-up)))
+)
+
 (mat wait-for-threads
   (begin
     ;; To avoid breaking later tests that use `(collect)`,
