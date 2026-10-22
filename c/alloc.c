@@ -549,7 +549,6 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
     AP(tc) = (ptr)ap;
     EAP(tc) = (ptr)eap;
     find_room(tc, space_new, 0, type, size, x);
-    THREAD_GC(tc)->mutator_bytes += size;
   } else {
     uptr bytes = eap - ap;
     S_G.bytes_of_space[0][space_new] -= bytes;
@@ -562,7 +561,6 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
       AP(tc) = (ptr)(ap + size);
     } else {
       find_room(tc, space_new, 0, type, size, x);
-      THREAD_GC(tc)->mutator_bytes += size;
     }
   }
 

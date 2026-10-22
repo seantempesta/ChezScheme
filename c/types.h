@@ -90,9 +90,11 @@ typedef int IFASLCODE;      /* fasl type codes */
     (x) = T(TYPE(X, t));                                   \
   } while(0)
 
-#define find_room(tc, s, g, t, n, x) find_gc_room_T(THREAD_GC(tc), s, g, t, n, ALREADY_PTR, x)
+/* find_room and find_room_voidp are the mutator's (the collector's are find_gc_room): what
+   they allocate is the thread's own, counted in mutator_bytes (S_thread_bytes_allocated) */
+#define find_room(tc, s, g, t, n, x) do { find_gc_room_T(THREAD_GC(tc), s, g, t, n, ALREADY_PTR, x); THREAD_GC(tc)->mutator_bytes += (n); } while(0)
 #define find_gc_room(tgc, s, g, t, n, x) find_gc_room_T(tgc, s, g, t, n, ALREADY_PTR, x)
-#define find_room_voidp(tc, s, g, n, x) find_gc_room_T(THREAD_GC(tc), s, g, type_untyped, n, TO_VOIDP, x)
+#define find_room_voidp(tc, s, g, n, x) do { find_gc_room_T(THREAD_GC(tc), s, g, type_untyped, n, TO_VOIDP, x); THREAD_GC(tc)->mutator_bytes += (n); } while(0)
 #define find_gc_room_voidp(tgc, s, g, n, x) find_gc_room_T(tgc, s, g, type_untyped, n, TO_VOIDP, x)
 
 /* new-space inline allocation --- no mutex required */
