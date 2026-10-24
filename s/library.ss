@@ -1218,7 +1218,9 @@
     (if $collect-request-pending
         (let ([handler $collect-rendezvous])
           (restart-timer)
-          (handler))
+          ;; the request's handler, whoever installed it, runs on the thread the request
+          ;; landed on; its work is the runtime's, not that thread's code's ($call-uncounted)
+          ($call-uncounted handler))
         (restart-timer)))
   (define (restart-timer)
     (cond

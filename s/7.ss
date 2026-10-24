@@ -792,6 +792,18 @@
 (define $scheme)
 (define $script)
 (define $as-time-goes-by)
+;; (thunk), with what it allocates on this thread taken back from the thread's own count
+;; (c/alloc.c S_thread_bytes_uncount): a collection and the collect request's handler are the
+;; runtime's bookkeeping, run on whichever thread the request lands on, never that code's
+(define $call-uncounted
+  (let ([thread-bytes (foreign-procedure "(cs)thread_bytes_allocated" () uptr)]
+        [thread-bytes-uncount (foreign-procedure "(cs)thread_bytes_uncount" (uptr) void)])
+    (lambda (thunk)
+      (let ([since (thread-bytes)])
+        (let ([r (thunk)])
+          (thread-bytes-uncount since)
+          r)))))
+
 (define collect)
 (define break-handler)
 (define debug)
@@ -809,16 +821,9 @@
   (define start-bytes 0)
   (define allocated-after-max 0)
   (define docollect
-    (let ([thread-bytes (foreign-procedure "(cs)thread_bytes_allocated" () uptr)]
-          [thread-bytes-uncount (foreign-procedure "(cs)thread_bytes_uncount" (uptr) void)])
-      (lambda (p)
-        ;; what the collection allocates on this thread (its clocks, its counts, the
-        ;; resurrected files and mutexes it closes) is the collector's: taken back from the
-        ;; thread's own count (c/alloc.c S_thread_bytes_uncount)
-        (let ([since (thread-bytes)])
-          (let ([r (docollect1 p)])
-            (thread-bytes-uncount since)
-            r)))))
+    ;; what the collection allocates on this thread (its clocks, its counts, the resurrected
+    ;; files and mutexes it closes) is the collector's
+    (lambda (p) ($call-uncounted (lambda () (docollect1 p)))))
   (define docollect1
     (let ([do-gc (foreign-procedure "(cs)do_gc" (int int int ptr) ptr)]
           [convert-native-threads (foreign-procedure "(cs)convert_native_threads" () iptr)])

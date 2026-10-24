@@ -1931,6 +1931,7 @@
   ($c-make-closure [flags single-valued])
   ($c-make-code [flags single-valued])
   ($code? [sig [(ptr) -> (boolean)]] [flags pure unrestricted mifoldable])
+  ($call-uncounted [flags])
   ($code-free-count [flags single-valued])
   ($code-info [flags single-valued])
   ($code-arity-mask [flags single-valued])
