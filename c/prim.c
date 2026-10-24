@@ -191,6 +191,7 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)fixedpathp", (void *)S_fixedpathp);
     Sforeign_symbol("(cs)bytes_allocated", (void *)S_compute_bytes_allocated);
     Sforeign_symbol("(cs)thread_bytes_allocated", (void *)S_thread_bytes_allocated);
+    Sforeign_symbol("(cs)thread_bytes_uncount", (void *)S_thread_bytes_uncount);
     Sforeign_symbol("(cs)bytes_finalized", (void *)S_bytes_finalized);
     Sforeign_symbol("(cs)curmembytes", (void *)S_curmembytes);
     Sforeign_symbol("(cs)maxmembytes", (void *)S_maxmembytes);

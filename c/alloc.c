@@ -209,6 +209,14 @@ uptr S_thread_bytes_allocated(void) {
   return n;
 }
 
+/* takes back from the calling thread's count what it allocated since its count read since:
+   a collection's bookkeeping on whichever thread runs it (7.ss docollect) is the
+   collector's, never the code that happened to trip it */
+void S_thread_bytes_uncount(uptr since) {
+  ptr tc = get_thread_context();
+  THREAD_GC(tc)->mutator_bytes -= S_thread_bytes_allocated() - since;
+}
+
 ptr S_bytes_finalized() {
   return Sunsigned(S_G.bytes_finalized);
 }
