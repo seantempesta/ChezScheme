@@ -5389,6 +5389,8 @@
                                 (if ,(%inline eq? ,%sfp ,(%constant snil))
                                     ,(%seq
                                        (set! ,%ac0 ,%xp)
+                                       ; the one untyped allocation of this size: c/alloc.c
+                                       ; find_room_or_stack leaves it out of the thread's count
                                        (set! ,%xp ,(%constant-alloc type-untyped (constant default-stack-size)))
                                        (set! ,%sfp ,%xp)
                                        (set! ,(%tc-ref scheme-stack) ,%sfp)
