@@ -112,8 +112,10 @@ void S_reset_scheme_stack(ptr tc, iptr n) {
     for (;;) {
         if (*x == snil) {
             if (n < default_stack_size) n = default_stack_size;
-          /* stacks are untyped objects */
-            find_room(tc, space_new, 0, type_untyped, n, SCHEMESTACK(tc));
+          /* stacks are untyped objects. Not counted in mutator_bytes: whether a call
+             takes a new stack or a cached one depends on what ran before (a collection
+             empties the cache), never on the call's own work, which its depth is */
+            find_gc_room(THREAD_GC(tc), space_new, 0, type_untyped, n, SCHEMESTACK(tc));
             break;
         }
         if ((m = CACHEDSTACKSIZE(*x)) >= n) {
