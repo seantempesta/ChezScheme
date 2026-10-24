@@ -531,6 +531,14 @@ void S_get_more_room(void) {
   XP(tc) = S_get_more_room_help(tc, ap, type, size);
 }
 
+/* a new stack (call/1cc's when the stack cache is empty: cpnanopass's %constant-alloc
+   type-untyped default-stack-size, the only untyped request of that size) is not counted
+   in mutator_bytes, as S_reset_scheme_stack's is not: a collection empties the cache, so
+   whether a call takes one depends on what ran before, never on the call's own work */
+#define find_room_or_stack(tc, type, size, x) do { \
+    if ((type) == type_untyped && (size) == default_stack_size) find_gc_room(THREAD_GC(tc), space_new, 0, type, size, x); \
+    else find_room(tc, space_new, 0, type, size, x); } while(0)
+
 ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
   ptr x; uptr eap, real_eap;
 
@@ -558,7 +566,7 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
   } else if (eap - ap > alloc_waste_maximum) {
     AP(tc) = (ptr)ap;
     EAP(tc) = (ptr)eap;
-    find_room(tc, space_new, 0, type, size, x);
+    find_room_or_stack(tc, type, size, x);
   } else {
     uptr bytes = eap - ap;
     S_G.bytes_of_space[0][space_new] -= bytes;
@@ -570,7 +578,7 @@ ptr S_get_more_room_help(ptr tc, uptr ap, uptr type, uptr size) {
       x = TYPE(ap, type);
       AP(tc) = (ptr)(ap + size);
     } else {
-      find_room(tc, space_new, 0, type, size, x);
+      find_room_or_stack(tc, type, size, x);
     }
   }
 
