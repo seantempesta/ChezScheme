@@ -216,6 +216,7 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)set_maxgen", (void *)S_set_maxgen);
 #if defined(PTHREADS)
     Sforeign_symbol("(cs)collect_sweepers", (void *)S_collect_sweepers);
+    Sforeign_symbol("(cs)fork_alone", (void *)S_fork_alone);
 #endif
     Sforeign_symbol("(cs)minfreegen", (void *)S_minfreegen);
     Sforeign_symbol("(cs)set_minmarkgen", (void *)S_set_minmarkgen);

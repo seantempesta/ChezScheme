@@ -465,6 +465,31 @@ static IBOOL destroy_thread(ptr tc) {
   return status;
 }
 
+#ifndef WIN32
+#include <unistd.h>
+/* (cs)fork_alone: fork(2) while this is the one active thread, holding the runtime's own
+   mutexes across it: the thread mutex (no thread is created, activated or deactivated, and no
+   collection starts), then the allocation mutex, in their order. fork(2) copies only the
+   calling thread, so a mutex another thread held would stay locked in the child forever;
+   holding each here, the child inherits them held by its one thread, and both processes release
+   them (pthread_atfork's rule, for Chez's locks; a program's own locks are its runtime's to
+   take, e.g. Jolt's jolt.host/fork-alone). Answers the child's pid here and 0 in the child, -1
+   when the OS refused, -2 when another thread is active. */
+iptr S_fork_alone(void) {
+  iptr pid;
+  tc_mutex_acquire();
+  if (SYMVAL(S_G.active_threads_id) != FIX(1)) {
+    tc_mutex_release();
+    return -2;
+  }
+  alloc_mutex_acquire();
+  pid = fork();
+  alloc_mutex_release();
+  tc_mutex_release();
+  return pid;
+}
+#endif
+
 ptr S_fork_thread(ptr thunk) {
   ptr thread;
   int status;

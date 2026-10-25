@@ -193,6 +193,7 @@ extern void S_gc_011(ptr tc);
 /* gc-par.c */
 extern ptr S_gc_par(ptr tc, IGEN max_cg, IGEN min_tg, IGEN max_tg, ptr count_roots);
 extern iptr S_collect_sweepers(iptr n);
+extern iptr S_fork_alone(void);
 
 /* gc-ocd.c */
 extern ptr S_gc_ocd(ptr tc, IGEN max_cg, IGEN min_tg, IGEN max_tg, ptr count_roots);
