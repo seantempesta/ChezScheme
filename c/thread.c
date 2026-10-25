@@ -474,10 +474,13 @@ static IBOOL destroy_thread(ptr tc) {
    holding each here, the child inherits them held by its one thread, and both processes release
    them (pthread_atfork's rule, for Chez's locks; a program's own locks are its runtime's to
    take, e.g. Jolt's jolt.host/fork-alone). Answers the child's pid here and 0 in the child, -1
-   when the OS refused, -2 when another thread is active. */
+   when the OS refused, -2 when another thread is active. A thread in a collect-safe call is
+   converted first (S_convert_native_threads), as a collection's rendezvous does: it counts as
+   active until something converts it, and its way back waits on the thread mutex held here. */
 iptr S_fork_alone(void) {
   iptr pid;
   tc_mutex_acquire();
+  S_convert_native_threads();
   if (SYMVAL(S_G.active_threads_id) != FIX(1)) {
     tc_mutex_release();
     return -2;
