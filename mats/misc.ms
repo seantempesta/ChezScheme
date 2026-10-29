@@ -1961,6 +1961,41 @@
     (run-script "./testfile-sff-expr.so")
     "hello\n")
 
+  ; inspector-variables drops a frame's variable names (the code-info live vector, the rp-info masks) and
+  ; the return points that have no source object, and keeps the frame's source object: a continuation
+  ; captured in a stripped procedure still has its source object but names no variables
+  (begin
+    (with-output-to-file "testfile-sff-v.ss"
+      (lambda ()
+        (printf "#! ~a --script\n" *scheme*)
+        (pretty-print
+          '(define (grab alpha beta)
+             (import (chezscheme))
+             (+ 1 (call/cc
+                    (lambda (k)
+                      (let ([o (inspect/object k)])
+                        (let loop ([i 0] [names '()])
+                          (if (= i (o 'length))
+                              (begin
+                                (write (list (and (o 'source-object) #t)
+                                             (and (memq 'alpha names) #t)
+                                             (and (memq 'beta names) #t)))
+                                (newline)
+                                0)
+                              (loop (+ i 1) (cons ((o 'ref i) 'name) names)))))))
+                  alpha beta)))
+        (pretty-print '(grab 1 2)))
+      'replace)
+    (parameterize ([generate-inspector-information #t])
+      (compile-script "testfile-sff-v"))
+    #t)
+  (begin
+    (strip-fasl-file "testfile-sff-v.so" "testfile-sff-v-stripped.so"
+      (fasl-strip-options inspector-expressions inspector-variables))
+    #t)
+  (equal? (run-script "./testfile-sff-v.so") "(#t #t #t)\n")
+  (equal? (run-script "./testfile-sff-v-stripped.so") "(#t #f #f)\n")
+
   ; non-library compile-time-information
   (begin
     (with-output-to-file "testfile-sff-3.ss"

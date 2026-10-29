@@ -1792,6 +1792,18 @@ This is far smaller than keeping all inspector information and keeps
 stack traces readable by name and position.
 \scheme{inspector-source} subsumes it.
 
+\item[\scheme{inspector-variables}:]
+Strip the names of the variables of continuation frames: the live-variable
+information of each procedure and the live mask of each return point
+(the ``length'' of a continuation object and the variable objects it holds
+keep their values but lose their names), and the return points that have
+no source object.
+Procedure and frame names and the source object of every frame that has
+one (so file and position) are kept.
+Combine it with \scheme{inspector-expressions} to keep only what a
+stack trace of names and positions needs.
+\scheme{inspector-source} subsumes it.
+
 \item[\scheme{source-annotations}:]
 Strip source annotations, which typically appear only on syntax objects,
 e.g., identifiers, in the templates of macro transformers.

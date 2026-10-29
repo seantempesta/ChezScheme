@@ -340,6 +340,7 @@
     (define-threaded strip-source-annotations?)
     (define-threaded strip-compile-time-information?)
     (define-threaded strip-inspector-expressions?)
+    (define-threaded strip-inspector-variables?)
 
     (module (fasl-record-predicate fasl-record-accessor)
       (define field-index
@@ -400,22 +401,64 @@
 
     ; inspector-expressions: the fields that hold a procedure's expanded source (a code-info's sexpr
     ; and free, a return point's rp-info sexpr) are written as #f; everything else the inspector reads
-    ; (names, source objects and so file and position, offsets, live masks) is kept
+    ; (names, source objects and so file and position, offsets, live masks) is kept.
+    ; inspector-variables: the frame variables' names are dropped: a code-info's live vector is written
+    ; as #f and every rp-info's mask as 0 (never #f: make-continuation-object tests (eqv? mask 0)), and
+    ; a return point with no source object is left out of the code-info's rpis, which the inspector
+    ; already answers like an offset it does not know (a frame with no source and no variable names).
+    ; A kept rp-info keeps its offset and source object, so a frame's source-object and file:line do not change.
     (define drop-inspector-expressions
       (lambda (x fld*)
         (define blank
-          (lambda (fld* idxs)
+          (lambda (fld* alist)
             (let loop ([f fld*] [i 0])
               (cond
                 [(null? f) '()]
-                [(memv i idxs)
-                 (cons (field-ptr (fasl-atom (constant fasl-type-immediate) (constant sfalse)))
-                       (loop (cdr f) (fx+ i 1)))]
+                [(assv i alist) =>
+                 (lambda (a)
+                   (cons (field-ptr (cdr a)) (loop (cdr f) (fx+ i 1))))]
                 [else (cons (car f) (loop (cdr f) (fx+ i 1)))]))))
+        (define false-atom (fasl-atom (constant fasl-type-immediate) (constant sfalse)))
+        (define fasl-false?
+          (lambda (fasl)
+            (fasl-case (follow-indirect fasl)
+              [atom (ty uptr) (and (eqv? ty (constant fasl-type-immediate)) (eqv? uptr (constant sfalse)))]
+              [else #f])))
+        ; an rp-info's src field (index 1) holds #f
+        (define rp-info-sourceless?
+          (lambda (r)
+            (fasl-case (follow-indirect r)
+              [record (maybe-uid size nflds rtd pad-ty* fld*)
+               (and (fasl-rp-info? r)
+                    (field-case (list-ref fld* 1)
+                      [ptr (fasl) (fasl-false? fasl)]
+                      [else #f]))]
+              [else #f])))
+        ; the rpis field (index 5) without its sourceless return points, #f if none are left
+        (define rpis-with-sources
+          (lambda (fld*)
+            (field-case (list-ref fld* 5)
+              [ptr (fasl)
+               (fasl-case (follow-indirect fasl)
+                 [vector (ty vfasl)
+                  (let ([kept (filter (lambda (r) (not (rp-info-sourceless? r))) (vector->list vfasl))])
+                    (if (null? kept)
+                        false-atom
+                        (fasl-vector ty (list->vector kept))))]
+                 [else fasl])]
+              [else (sorry! "unexpected type of rpis field")])))
         (cond
-          [(not strip-inspector-expressions?) fld*]
-          [(fasl-code-info? x) (blank fld* '(2 3))]
-          [(fasl-rp-info? x) (blank fld* '(2))]
+          [(not (or strip-inspector-expressions? strip-inspector-variables?)) fld*]
+          [(fasl-code-info? x)
+           (blank fld*
+             (append (if strip-inspector-expressions? (list (cons 2 false-atom) (cons 3 false-atom)) '())
+                     (if strip-inspector-variables?
+                         (list (cons 4 false-atom) (cons 5 (rpis-with-sources fld*)))
+                         '())))]
+          [(fasl-rp-info? x)
+           (blank fld*
+             (append (if strip-inspector-expressions? (list (cons 2 false-atom)) '())
+                     (if strip-inspector-variables? (list (cons 3 (fasl-small-integer 0))) '())))]
           [else fld*])))
 
     (define-record-type table
@@ -894,7 +937,7 @@
               [else x]))
           (describe x))))
 
-    (set-who! $fasl-strip-options (make-enumeration '(inspector-source inspector-expressions profile-source source-annotations compile-time-information)))
+    (set-who! $fasl-strip-options (make-enumeration '(inspector-source inspector-expressions inspector-variables profile-source source-annotations compile-time-information)))
     (set-who! $make-fasl-strip-options (enum-set-constructor $fasl-strip-options))
 
     (let ()
@@ -927,6 +970,7 @@
                       [strip-source-annotations? (enum-set-subset? (fasl-strip-options source-annotations) options)]
                       [strip-compile-time-information? (enum-set-subset? (fasl-strip-options compile-time-information) options)]
                       [strip-inspector-expressions? (enum-set-member? 'inspector-expressions options)] ; not the fasl-strip-options form: the compiler that builds this file does not know the option yet
+                      [strip-inspector-variables? (enum-set-member? 'inspector-variables options)]
                       [fasl-who who]
                       [fasl-count 0])
             (let-values ([(script-header mode entry*) (read-and-strip-file ifn)])
@@ -948,6 +992,7 @@
                         [strip-source-annotations? #f]
                         [strip-compile-time-information? #f]
                         [strip-inspector-expressions? #f]
+                        [strip-inspector-variables? #f]
                         [fasl-who who]
                         [fasl-count 0])
               (let-values ([(script-header mode entry*) (read-and-strip-from-port ip #f externals)])
