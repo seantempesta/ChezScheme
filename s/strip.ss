@@ -339,6 +339,7 @@
     (define-threaded strip-profile-information?)
     (define-threaded strip-source-annotations?)
     (define-threaded strip-compile-time-information?)
+    (define-threaded strip-inspector-expressions?)
 
     (module (fasl-record-predicate fasl-record-accessor)
       (define field-index
@@ -390,10 +391,32 @@
                       [else (sorry! "unexpected type of field ~s" fld)]))]
                 [else (sorry! "~s should have been a fasl record" x)]))))))
 
-    (module (fasl-annotation? fasl-annotation-stripped)
+    (module (fasl-annotation? fasl-annotation-stripped fasl-code-info? fasl-rp-info?)
       (include "types.ss")
+      (define fasl-code-info? (fasl-record-predicate (record-type-descriptor code-info)))
+      (define fasl-rp-info? (fasl-record-predicate (record-type-descriptor rp-info)))
       (define fasl-annotation? (fasl-record-predicate (record-type-descriptor annotation)))
       (define fasl-annotation-stripped (fasl-record-accessor (record-type-descriptor annotation) 'stripped)))
+
+    ; inspector-expressions: the fields that hold a procedure's expanded source (a code-info's sexpr
+    ; and free, a return point's rp-info sexpr) are written as #f; everything else the inspector reads
+    ; (names, source objects and so file and position, offsets, live masks) is kept
+    (define drop-inspector-expressions
+      (lambda (x fld*)
+        (define blank
+          (lambda (fld* idxs)
+            (let loop ([f fld*] [i 0])
+              (cond
+                [(null? f) '()]
+                [(memv i idxs)
+                 (cons (field-ptr (fasl-atom (constant fasl-type-immediate) (constant sfalse)))
+                       (loop (cdr f) (fx+ i 1)))]
+                [else (cons (car f) (loop (cdr f) (fx+ i 1)))]))))
+        (cond
+          [(not strip-inspector-expressions?) fld*]
+          [(fasl-code-info? x) (blank fld* '(2 3))]
+          [(fasl-rp-info? x) (blank fld* '(2))]
+          [else fld*])))
 
     (define-record-type table
       (nongenerative)
@@ -443,7 +466,7 @@
                                (field-case fld
                                  [ptr (fasl) (build! fasl t)]
                                  [else (void)]))
-                     fld*))))]
+                     (drop-inspector-expressions x fld*)))))]
           [rtd-ref (uid) (build-graph! x t (lambda () (build! uid #t)))]
           [closure (offset c) (build-graph! x t (lambda () (build! c t)))]
           [flonum (high low) (build-graph! x t void)]
@@ -600,7 +623,7 @@
                                  [double (high low)
                                   (put-uptr p high)
                                   (put-uptr p low)]))
-                     pad-ty* fld*))))]
+                     pad-ty* (drop-inspector-expressions x fld*)))))]
           [rtd-ref (uid)
            (write-graph p t x
              (lambda ()
@@ -871,7 +894,7 @@
               [else x]))
           (describe x))))
 
-    (set-who! $fasl-strip-options (make-enumeration '(inspector-source profile-source source-annotations compile-time-information)))
+    (set-who! $fasl-strip-options (make-enumeration '(inspector-source inspector-expressions profile-source source-annotations compile-time-information)))
     (set-who! $make-fasl-strip-options (enum-set-constructor $fasl-strip-options))
 
     (let ()
@@ -903,6 +926,7 @@
                       [strip-profile-information? (enum-set-subset? (fasl-strip-options profile-source) options)]
                       [strip-source-annotations? (enum-set-subset? (fasl-strip-options source-annotations) options)]
                       [strip-compile-time-information? (enum-set-subset? (fasl-strip-options compile-time-information) options)]
+                      [strip-inspector-expressions? (enum-set-member? 'inspector-expressions options)] ; not the fasl-strip-options form: the compiler that builds this file does not know the option yet
                       [fasl-who who]
                       [fasl-count 0])
             (let-values ([(script-header mode entry*) (read-and-strip-file ifn)])
@@ -923,6 +947,7 @@
                         [strip-profile-information? #f]
                         [strip-source-annotations? #f]
                         [strip-compile-time-information? #f]
+                        [strip-inspector-expressions? #f]
                         [fasl-who who]
                         [fasl-count 0])
               (let-values ([(script-header mode entry*) (read-and-strip-from-port ip #f externals)])

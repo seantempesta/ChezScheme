@@ -1780,6 +1780,18 @@ It also includes filename and position information that might
 otherwise be available for the same via the ``file'' command and
 ``source'' messages.
 
+\item[\scheme{inspector-expressions}:]
+Strip only the expanded source expressions that inspector information
+holds: the expression and free-variable list of each procedure
+(the ``code'' command and the \scheme{code} message's expression), and
+the expression of each continuation frame (the ``call'' command).
+Procedure and frame names, source objects (so file and position, the
+``file'' command and \scheme{source-path} and \scheme{source-object}
+messages), and live-variable information are kept.
+This is far smaller than keeping all inspector information and keeps
+stack traces readable by name and position.
+\scheme{inspector-source} subsumes it.
+
 \item[\scheme{source-annotations}:]
 Strip source annotations, which typically appear only on syntax objects,
 e.g., identifiers, in the templates of macro transformers.

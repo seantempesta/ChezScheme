@@ -1937,6 +1937,30 @@
     (run-script "./testfile-sff-stripped.so")
     "hello\n")
 
+  ; inspector-expressions drops only the expanded source: the code object keeps its name and its
+  ; source object (so file and position), loses the expression the 'source message returns
+  (begin
+    (strip-fasl-file "testfile-sff.so" "testfile-sff-expr.so"
+      (fasl-strip-options inspector-expressions))
+    #t)
+  (equal?
+    (separate-eval
+      '(load "testfile-sff-expr.so")
+      '(let ([c ((inspect/object hello) 'code)])
+         (list (and (c 'source) #t) (and (c 'source-object) #t) (call-with-values (lambda () (c 'source-path)) (lambda (path . pos) (and path #t)))
+               (c 'name) (and (c 'free-count) #t))))
+    "hello\n(#f #t #t hello #t)\n")
+  (equal?
+    (separate-eval
+      '(load "testfile-sff.so")
+      '(let ([c ((inspect/object hello) 'code)])
+         (list (and (c 'source) #t) (and (c 'source-object) #t) (call-with-values (lambda () (c 'source-path)) (lambda (path . pos) (and path #t)))
+               (c 'name))))
+    "hello\n(#t #t #t hello)\n")
+  (equal?
+    (run-script "./testfile-sff-expr.so")
+    "hello\n")
+
   ; non-library compile-time-information
   (begin
     (with-output-to-file "testfile-sff-3.ss"
