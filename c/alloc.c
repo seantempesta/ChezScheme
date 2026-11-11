@@ -896,7 +896,11 @@ ptr S_mkcontinuation(ISPC s, IGEN g, ptr nuate, ptr stack, iptr length, iptr cle
     ptr p;
     ptr tc = get_thread_context();
 
-    find_room(tc, s, g, type_closure, size_continuation, p);
+  /* a continuation made here is a stack cut (S_overflow, split). Not counted in mutator_bytes,
+     as the stack it names is not: how many cuts a call takes depends on what ran before (a
+     collection makes a deep stack one multi-shot continuation, cut again piece by piece on
+     the way back), never on the call's own work */
+    find_gc_room_T(THREAD_GC(tc), s, g, type_closure, size_continuation, ALREADY_PTR, p);
     CLOSENTRY(p) = nuate;
     CONTSTACK(p) = stack;
     CONTLENGTH(p) = length;
