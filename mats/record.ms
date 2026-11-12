@@ -9542,3 +9542,27 @@
       (#2%make-record-type-descriptor 'A #f #f #f #f '(2 . 0))
       #f))
 )
+
+(mat $record-ordered-access
+  (begin
+    (define-record-type ordered-pt (fields (mutable x) (mutable y)))
+    #t)
+  (eq? 2 (#%$record-ref-acquire (make-ordered-pt 1 2) 1))
+  (let ([p (make-ordered-pt 1 2)])
+    (#%$record-set-release! p 0 'a)
+    (and (eq? 'a (ordered-pt-x p)) (eq? 2 (ordered-pt-y p))))
+  (let ([p (make-ordered-pt 1 2)])
+    (and (not (#%$record-ordered-cas! p 1 1 3))
+         (retry-for-spurious (#%$record-ordered-cas! p 1 2 3))
+         (eq? 3 (ordered-pt-y p))
+         (eq? 1 (ordered-pt-x p))))
+  ;; the store and the CAS mark the card: an old record keeps a fresh young object
+  (let ([p (make-ordered-pt 'old #f)])
+    (collect (collect-maximum-generation))
+    (#%$record-set-release! p 1 (string #\a #\b))
+    (and (retry-for-spurious (#%$record-ordered-cas! p 0 'old (string #\c)))
+         (begin
+           (collect 0)
+           (and (equal? (#%$record-ref-acquire p 0) "c")
+                (equal? (#%$record-ref-acquire p 1) "ab")))))
+  )

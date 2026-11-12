@@ -64,3 +64,54 @@
              (collect 0)
              (eq? g1 (unbox bx2))))))
   )
+
+(mat unbox-acquire
+  (eq? 1 (unbox-acquire (box 1)))
+  (eq? 'apple (unbox-acquire (box-immutable 'apple)))
+  (eq? 'x (let ([f (lambda (b) (unbox-acquire b))]) (f (box 'x))))
+  (error? (unbox-acquire)) ; arity
+  (error? (unbox-acquire 1)) ; not a box
+  )
+
+(mat set-box-release!
+  (let ([b (box 1)])
+    (set-box-release! b 2)
+    (eq? 2 (unbox b)))
+  (error? (set-box-release! (box 1))) ; arity
+  (error? (set-box-release! 1 2)) ; not a box
+  (error? (set-box-release! (box-immutable 1) 2)) ; not a mutable box
+  ;; the store marks the card: an old box keeps a fresh young object
+  (let ([b (box #f)])
+    (collect (collect-maximum-generation))
+    (set-box-release! b (string #\a #\b))
+    (collect 0)
+    (equal? (unbox-acquire b) "ab"))
+  (let ([b (box #f)] [f (lambda (b x) (set-box-release! b x))])
+    (collect (collect-maximum-generation))
+    (f b (list 'fresh))
+    (collect 0)
+    (equal? (unbox b) '(fresh)))
+  )
+
+(mat box-ordered-cas!
+  (let ([b (box 1)])
+    (and (not (box-ordered-cas! b 0 1))
+         (eq? 1 (unbox b))
+         (retry-for-spurious (box-ordered-cas! b 1 2))
+         (eq? 2 (unbox b))
+         (not (box-ordered-cas! b 1 3))
+         (eq? 2 (unbox b))))
+  (not (box-ordered-cas! (box (bitwise-arithmetic-shift-left 1 40))
+                         (bitwise-arithmetic-shift-left 2 40)
+                         'wrong))
+  (error? (box-ordered-cas! (box 1) 1)) ; arity
+  (error? (box-ordered-cas! 1 1 2)) ; not a box
+  (error? (box-ordered-cas! (box-immutable 1) 1 2)) ; not a mutable box
+  ;; the CAS marks the card: an old box keeps a fresh young object
+  (let ([b (box 'old)])
+    (collect (collect-maximum-generation))
+    (and (retry-for-spurious (box-ordered-cas! b 'old (string #\a #\b)))
+         (begin
+           (collect 0)
+           (equal? (unbox b) "ab"))))
+  )

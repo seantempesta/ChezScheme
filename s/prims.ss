@@ -1543,6 +1543,59 @@
           (box-cas! b old-v new-v)
           ($oops who "~s is not a mutable box" b))))
 
+;; The ordered accesses: see `build-load-acquire` and its neighbors in cpprim.ss
+(define-who unbox-acquire
+  (lambda (b)
+    (if (box? b)
+        (#3%unbox-acquire b)
+        ($oops who "~s is not a box" b))))
+
+(define-who set-box-release!
+  (lambda (b v)
+    (if (mutable-box? b)
+        (#3%set-box-release! b v)
+        ($oops who "~s is not a mutable box" b))))
+
+(define-who box-ordered-cas!
+  (lambda (b old-v new-v)
+    (if (mutable-box? b)
+        (#3%box-ordered-cas! b old-v new-v)
+        ($oops who "~s is not a mutable box" b))))
+
+(let ()
+  (define (check who v i mutable?)
+    (unless (if mutable? (mutable-vector? v) (vector? v))
+      ($oops who (if mutable? "~s is not a mutable vector" "~s is not a vector") v))
+    (unless (and (fixnum? i) (fx<= 0 i) (fx< i (vector-length v)))
+      ($oops who "~s is not a valid index for ~s" i v)))
+  (set-who! vector-ref-acquire
+    (lambda (v i)
+      (check who v i #f)
+      (#3%vector-ref-acquire v i)))
+  (set-who! vector-set-release!
+    (lambda (v i x)
+      (check who v i #t)
+      (#3%vector-set-release! v i x)))
+  (set-who! vector-ordered-cas!
+    (lambda (v i old-x new-x)
+      (check who v i #t)
+      (#3%vector-ordered-cas! v i old-x new-x))))
+
+; not safe
+(define $record-ref-acquire
+  (lambda (r i)
+    (#3%$record-ref-acquire r i)))
+
+; not safe
+(define $record-set-release!
+  (lambda (r i x)
+    (#3%$record-set-release! r i x)))
+
+; not safe
+(define $record-ordered-cas!
+  (lambda (r i old-x new-x)
+    (#3%$record-ordered-cas! r i old-x new-x)))
+
 (define mutable-box?
   (lambda (b)
     (#3%mutable-box? b)))

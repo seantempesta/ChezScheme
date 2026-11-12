@@ -831,7 +831,23 @@
               (seq
                `(set! ,(make-live-info) ,urax ,old)
                ;; NB: may modify %rax:
-               `(asm ,info ,asm-locked-cmpxchg ,x ,y ,w ,urax ,new))))))]))
+               `(asm ,info ,asm-locked-cmpxchg ,x ,y ,w ,urax ,new))))))])
+
+    ;; A store-release with a Java volatile store's strength: xchg with a memory
+    ;; operand is locked, so it also orders the store before later loads
+    (define-instruction effect (store-release)
+      [(op (x ur) (y ur) (w imm) (v ur))
+       (imm->imm32
+        y w
+        (lambda (y w)
+          (let ([u (make-tmp 'u)])
+            (nanopass-case (L15d Triv) w
+              [(immediate ,imm)
+               (with-output-language (L15d Effect)
+                 (seq
+                  `(set! ,(make-live-info) ,u ,v)
+                  `(set! ,(make-live-info) ,u
+                         (asm ,info ,asm-exchange ,u (mref ,x ,y ,imm uptr)))))]))))]))
 
   (define-instruction effect (pause)
     [(op) `(asm ,info ,asm-pause)])

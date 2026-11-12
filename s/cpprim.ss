@@ -727,6 +727,59 @@
         `(if ,cas
              (seq ,remember ,(%constant strue))
              ,(%constant sfalse))))
+    ;; The ordered accesses: a load-acquire, a store-release with a Java
+    ;; volatile store's strength (ordered before later loads too), and a
+    ;; sequentially consistent CAS. arm64 has an instruction for each (ldar,
+    ;; stlr, ldaxr/stlxr); on x86 a load is already an acquire, `lock cmpxchg`
+    ;; is sequentially consistent, and the store is an `xchg`. Elsewhere a full
+    ;; fence goes around the plain access.
+    (define build-full-fence
+      (lambda ()
+        (constant-case architecture
+          [(arm32 ppc32 loongarch64) (%inline release-fence)] ; a full fence on these
+          [(riscv64 pb) (%seq ,(%inline store-store-fence) ,(%inline release-fence) ,(%inline acquire-fence))]
+          [else ($oops 'build-full-fence "no full fence for architecture ~s" (constant architecture))])))
+    (define build-load-acquire
+      (lambda (base index offset)
+        (constant-case architecture
+          [(arm64) (%inline load-acquire ,base ,index (immediate ,offset))]
+          [(x86 x86_64) (%mref ,base ,index ,offset)]
+          [else (bind #t ([t (%mref ,base ,index ,offset)])
+                  (%seq ,(%inline acquire-fence) ,t))])))
+    (define build-release-assign
+      (lambda (base index offset e)
+        (constant-case architecture
+          [(arm64 x86 x86_64) (%inline store-release ,base ,index (immediate ,offset) ,e)]
+          [else (%seq ,(build-full-fence) (set! ,(%mref ,base ,index ,offset) ,e) ,(build-full-fence))])))
+    (define build-release-store
+      (lambda (base index offset e)
+        (build-dirty-store base index offset e build-release-assign
+          (lambda (s r) `(seq ,s ,r)))))
+    (define make-build-ordered-cas
+      (lambda (old-v)
+        (constant-case architecture
+          [(arm64)
+           (lambda (base index offset v)
+             `(seq
+               ,(%inline ordered-cas ,base ,index (immediate ,offset) ,old-v ,v)
+               (inline ,(make-info-condition-code 'eq? #f #t) ,%condition-code)))]
+          [(x86 x86_64) (make-build-cas old-v)]
+          [else
+           (let ([build-cas (make-build-cas old-v)])
+             (lambda (base index offset v)
+               `(seq ,(build-full-fence) ,(build-cas base index offset v))))])))
+    (define build-ordered-cas-seq
+      (constant-case architecture
+        [(arm64 x86 x86_64) build-cas-seq]
+        [else
+         (lambda (cas remember)
+           `(if ,cas
+                (seq ,(build-full-fence) (seq ,remember ,(%constant strue)))
+                (seq ,(build-full-fence) ,(%constant sfalse))))]))
+    (define build-ordered-cas
+      (lambda (base index offset e-old e-new)
+        (bind #t (e-old)
+          (build-dirty-store base index offset e-new (make-build-ordered-cas e-old) build-ordered-cas-seq))))
     (define build-$record
       (lambda (tag args)
         (bind #f (tag)
@@ -3343,6 +3396,37 @@
 	          [(arm32 arm64 riscv64 loongarch64 pb) (%seq ,(%inline release-fence) (quote ,(void)))]
               [else `(quote ,(void))])
             `(quote ,(void)))])
+    (let ()
+      (define (index e-i disp k)
+        (nanopass-case (L7 Expr) e-i
+          [(quote ,d)
+           (guard (target-fixnum? d))
+           (k %zero (+ (fix d) disp))]
+          [else (k e-i disp)]))
+      (define-inline 3 unbox-acquire
+        [(e) (build-load-acquire e %zero (constant box-ref-disp))])
+      (define-inline 3 set-box-release!
+        [(e-box e-new) (build-release-store e-box %zero (constant box-ref-disp) e-new)])
+      (define-inline 3 box-ordered-cas!
+        [(e-box e-old e-new) (build-ordered-cas e-box %zero (constant box-ref-disp) e-old e-new)])
+      (define-inline 3 vector-ref-acquire
+        [(e-v e-i) (index e-i (constant vector-data-disp)
+                     (lambda (i d) (build-load-acquire e-v i d)))])
+      (define-inline 3 vector-set-release!
+        [(e-v e-i e-new) (index e-i (constant vector-data-disp)
+                           (lambda (i d) (build-release-store e-v i d e-new)))])
+      (define-inline 3 vector-ordered-cas!
+        [(e-v e-i e-old e-new) (index e-i (constant vector-data-disp)
+                                 (lambda (i d) (build-ordered-cas e-v i d e-old e-new)))])
+      (define-inline 3 $record-ref-acquire
+        [(e-r e-i) (index e-i (constant record-data-disp)
+                     (lambda (i d) (build-load-acquire e-r i d)))])
+      (define-inline 3 $record-set-release!
+        [(e-r e-i e-new) (index e-i (constant record-data-disp)
+                           (lambda (i d) (build-release-store e-r i d e-new)))])
+      (define-inline 3 $record-ordered-cas!
+        [(e-r e-i e-old e-new) (index e-i (constant record-data-disp)
+                                 (lambda (i d) (build-ordered-cas e-r i d e-old e-new)))]))
     (let ()
       (define-syntax define-tlc-parameter
         (syntax-rules ()

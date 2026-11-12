@@ -686,6 +686,9 @@
   (declare-primitive push-fpmultiple effect #f) ; arm64
   (declare-primitive pop-fpmultiple effect #f) ; arm64
   (declare-primitive cas effect #f)
+  (declare-primitive ordered-cas effect #f) ; arm64
+  (declare-primitive store-release effect #f) ; arm64, x86, x86_64
+  (declare-primitive load-acquire value #f) ; arm64
   (declare-primitive store-store-fence effect #f)
   (declare-primitive acquire-fence effect #f)
   (declare-primitive release-fence effect #f)

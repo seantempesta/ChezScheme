@@ -2133,6 +2133,58 @@
              (eq? g1 (vector-ref vec2 2))))))
 )
 
+(mat vector-ref-acquire
+  (eq? 2 (vector-ref-acquire (vector 1 2 3) 1))
+  (eq? 'c (vector-ref-acquire (vector->immutable-vector (vector 'a 'b 'c)) 2))
+  (eq? 42 (let ([v (make-vector (expt 2 17) 0)])
+            (vector-set! v (sub1 (expt 2 17)) 42)
+            (vector-ref-acquire v (sub1 (expt 2 17)))))
+  (error? (vector-ref-acquire (vector 1))) ; arity
+  (error? (vector-ref-acquire 1 0)) ; not a vector
+  (error? (vector-ref-acquire (vector 1 2) 2)) ; out of range
+  (error? (vector-ref-acquire (vector 1 2) -1)) ; out of range
+  (error? (vector-ref-acquire (vector 1 2) 'a)) ; not a fixnum
+  )
+
+(mat vector-set-release!
+  (let ([v (vector 1 2 3)])
+    (vector-set-release! v 2 'z)
+    (equal? v '#(1 2 z)))
+  (let ([v (make-vector (expt 2 17) 0)])
+    (vector-set-release! v (sub1 (expt 2 17)) 42)
+    (eq? 42 (vector-ref v (sub1 (expt 2 17)))))
+  (error? (vector-set-release! (vector 1) 0)) ; arity
+  (error? (vector-set-release! (vector->immutable-vector (vector 1)) 0 2)) ; not a mutable vector
+  (error? (vector-set-release! (vector 1) 1 2)) ; out of range
+  ;; the store marks the card: an old vector keeps a fresh young object
+  (let ([v (make-vector 3 #f)])
+    (collect (collect-maximum-generation))
+    (vector-set-release! v 1 (string #\a #\b))
+    (collect 0)
+    (equal? (vector-ref-acquire v 1) "ab"))
+  )
+
+(mat vector-ordered-cas!
+  (let ([v (vector 1 'apple 3)])
+    (and (not (vector-ordered-cas! v 0 0 1))
+         (retry-for-spurious (vector-ordered-cas! v 0 1 4))
+         (eq? 4 (vector-ref v 0))
+         (not (vector-ordered-cas! v 1 'banana 'donut))
+         (retry-for-spurious (vector-ordered-cas! v 1 'apple 'donut))
+         (equal? v '#(4 donut 3))))
+  (error? (vector-ordered-cas! (vector 1) 0 1)) ; arity
+  (error? (vector-ordered-cas! 1 0 1 2)) ; not a vector
+  (error? (vector-ordered-cas! (vector->immutable-vector (vector 1)) 0 1 2)) ; not a mutable vector
+  (error? (vector-ordered-cas! (vector 1) 1 1 2)) ; out of range
+  ;; the CAS marks the card: an old vector keeps a fresh young object
+  (let ([v (vector 'a 'old)])
+    (collect (collect-maximum-generation))
+    (and (retry-for-spurious (vector-ordered-cas! v 1 'old (string #\a #\b)))
+         (begin
+           (collect 0)
+           (equal? (vector-ref v 1) "ab"))))
+  )
+
 (mat stencil-vector
   (>= (stencil-vector-mask-width) 24)
   (stencil-vector? (stencil-vector 1 0))

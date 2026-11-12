@@ -668,7 +668,29 @@
              (seq
                `(set! ,(make-live-info) ,u1 (asm ,null-info ,asm-kill))
                `(set! ,(make-live-info) ,u2 (asm ,null-info ,asm-kill))
-               `(asm ,info ,asm-cas ,r ,old ,new ,u1 ,u2)))))]))
+               `(asm ,info ,asm-cas ,r ,old ,new ,u1 ,u2)))))])
+    ;; The ordered forms: a load-acquire (ldar), a store-release (stlr), and a
+    ;; sequentially consistent CAS (ldaxr/stlxr), as in the C/C++ mapping
+    ;; https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html
+    (define-instruction value (load-acquire)
+      [(op (z ur) (x ur) (y ur) (w imm-constant))
+       (lea->reg x y w
+         (lambda (r)
+           `(set! ,(make-live-info) ,z (asm ,null-info ,asm-load-acquire ,r))))])
+    (define-instruction effect (store-release)
+      [(op (x ur) (y ur) (w imm-constant) (v ur))
+       (lea->reg x y w
+         (lambda (r)
+           `(asm ,null-info ,asm-store-release ,r ,v)))])
+    (define-instruction effect (ordered-cas)
+      [(op (x ur) (y ur) (w imm-constant) (old ur) (new ur))
+       (lea->reg x y w
+         (lambda (r)
+           (let ([u1 (make-tmp 'u1)] [u2 (make-tmp 'u2)])
+             (seq
+               `(set! ,(make-live-info) ,u1 (asm ,null-info ,asm-kill))
+               `(set! ,(make-live-info) ,u2 (asm ,null-info ,asm-kill))
+               `(asm ,info ,asm-ordered-cas ,r ,old ,new ,u1 ,u2)))))]))
 
   (define-instruction effect (store-store-fence)
     [(op)
@@ -731,6 +753,7 @@
                      asm-fpmove-single asm-fl-cvt asm-fpt asm-fpmove asm-fpcastto asm-fpcastfrom
                      asm-fptrunc asm-fpsingle
                      asm-lock asm-lock+/- asm-cas asm-fence
+                     asm-load-acquire asm-store-release asm-ordered-cas
                      asm-fpop-2 asm-fpsqrt asm-c-simple-call
                      asm-return asm-c-return asm-size
                      asm-enter asm-foreign-call asm-foreign-callable
@@ -920,6 +943,10 @@
 
   (define-op ldxr   ldxr-op      #b1 `(reg . ,%real-zero))
   (define-op stxr   ldxr-op      #b0)
+  (define-op ldaxr  ordered-ex-op #b0 #b1 `(reg . ,%real-zero))
+  (define-op stlxr  ordered-ex-op #b0 #b0)
+  (define-op ldar   ordered-ex-op #b1 #b1 `(reg . ,%real-zero))
+  (define-op stlr   ordered-ex-op #b1 #b0 `(reg . ,%real-zero))
 
   (define-op dmbst    dmb-op #b1110)
   (define-op dmbish   dmb-op #b1011)
@@ -1253,6 +1280,22 @@
         [10 #b11111]
         [5  (ax-ea-reg-code src)]
         [0  (ax-ea-reg-code dest)])))
+
+  ;; ldaxr, stlxr, ldar and stlr: o0 (bit 15) is 1; o2 (bit 23) picks the
+  ;; non-exclusive ldar/stlr, L (bit 22) picks a load
+  (define ordered-ex-op
+    (lambda (op o2 L rs rt rn code*)
+      (emit-code (op rs rt rn code*)
+        [30 #b11]
+        [24 #b001000]
+        [23 o2]
+        [22 L]
+        [21 0]
+        [16 (ax-ea-reg-code rs)]
+        [15 #b1]
+        [10 #b11111]
+        [5  (ax-ea-reg-code rn)]
+        [0  (ax-ea-reg-code rt)])))
 
   (define dmb-op
     (lambda (op mode code*)
@@ -2004,7 +2047,29 @@
                 (emit cmpi tmp2 0
                    code*))))))))
 
-  ;; Based in part on https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html
+  ;; As asm-cas, but sequentially consistent: ldaxr/stlxr is the seq_cst
+  ;; compare-exchange in the C/C++ mapping cited below
+  (define-who asm-ordered-cas
+    (lambda (code* src old new tmp1 tmp2)
+      (Trivit (src old new tmp1 tmp2)
+        (emit ldaxr tmp1 src
+          (emit cmp tmp1 old
+            (emit bnei 12
+              (emit stlxr tmp2 new src
+                (emit cmpi tmp2 0
+                   code*))))))))
+
+  (define asm-load-acquire
+    (lambda (code* dest src)
+      (Trivit (dest src)
+        (emit ldar dest src code*))))
+
+  (define asm-store-release
+    (lambda (code* dest src)
+      (Trivit (dest src)
+        (emit stlr src dest code*))))
+
+    ;; Based in part on https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html
   (define-who asm-fence
     (lambda (kind)
       (lambda (code*)
