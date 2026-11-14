@@ -68,7 +68,8 @@ extern void S_maybe_fire_collector(thread_gc *tgc);
 extern ptr S_compute_bytes_allocated(ptr xg, ptr xs);
 extern uptr S_thread_bytes_allocated(void);
 #if defined(PTHREADS) && !defined(WIN32)
-extern INT S_fork_alone(void);
+extern INT S_fork_alone(iptr bound_ms);
+extern INT S_fork_hold_state(ptr thread);
 extern void S_fork_alone_cancel(void);
 #endif
 extern void S_thread_bytes_uncount(uptr since);

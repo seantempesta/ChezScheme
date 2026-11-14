@@ -752,12 +752,20 @@ IBOOL S_condition_wait(s_thread_cond_t *c, scheme_mutex_t *m, ptr t) {
    thread to park (deactivate in a wait or a collect-safe call, or exit), woken by each one that does
    (S_fork_cond), never by a clock. While it waits it is itself inactive, so a collection can run. It forks
    with the tc mutex still held: no thread can reactivate across the fork. Answers the pid (0 in the child),
-   or -2 when S_fork_cancel ended the wait (S_fork_alone_cancel: the fork's own bound, its caller's).
+   or -2 when S_fork_cancel ended the wait (S_fork_alone_cancel), or -3 at bound_ms (none when negative):
+   every wait ends, and the caller names who held it (S_fork_hold_state).
    A thread in a native call is counted active until converted, as a collection converts it. */
-INT S_fork_alone(void) {
+INT S_fork_alone(iptr bound_ms) {
   ptr tc = get_thread_context();
   scheme_mutex_t *m = &S_tc_mutex;
   INT pid;
+  struct timespec deadline;
+  if (bound_ms >= 0) {
+    S_gettime(time_utc, &deadline);
+    deadline.tv_sec += (time_t)(bound_ms / 1000);
+    deadline.tv_nsec += (long)(bound_ms % 1000) * 1000000;
+    if (deadline.tv_nsec >= 1000000000) { deadline.tv_sec += 1; deadline.tv_nsec -= 1000000000; }
+  }
   tc_mutex_acquire();
   S_fork_waiters += 1;
   /* the waiter count is visible before any thread's mark is read, so a thread
@@ -769,7 +777,17 @@ INT S_fork_alone(void) {
     if (UNFIX(SYMVAL(S_G.active_threads_id)) <= 1) break;
     deactivate_thread_signal_collect(tc, 1)
     m->count = 0;
-    s_thread_cond_wait(&S_fork_cond, &m->pmutex);
+    if (bound_ms < 0) {
+      s_thread_cond_wait(&S_fork_cond, &m->pmutex);
+    } else if (pthread_cond_timedwait(&S_fork_cond, &m->pmutex, &deadline) == ETIMEDOUT) {
+      m->owner = s_thread_self();
+      m->count = 1;
+      reactivate_thread(tc)
+      /* the bound: still not the one active thread at the deadline. The caller names the holders
+         (S_fork_hold_state) while they are as they were */
+      if (UNFIX(SYMVAL(S_G.active_threads_id)) > 1) { S_fork_waiters -= 1; tc_mutex_release(); return -3; }
+      continue;
+    }
     m->owner = s_thread_self();
     m->count = 1;
     reactivate_thread(tc)
@@ -778,6 +796,20 @@ INT S_fork_alone(void) {
   pid = fork();
   tc_mutex_release();
   return pid;
+}
+
+/* Whether thread (a $thread-list entry) holds a fork: 1 when it is active, running Scheme or in a C call that is not
+   collect-safe (Chez marks only collect-safe calls, so the two look alike here), 0 when it is parked, in a collect-safe
+   call or gone. For naming a fork's holders. */
+INT S_fork_hold_state(ptr thread) {
+  ptr t_tc = (ptr)THREADTC(thread);
+  INT r;
+  if (t_tc == (ptr)0) return 0;
+  tc_mutex_acquire();
+  if (!ACTIVE(t_tc) || THREAD_GC(t_tc)->native_state != native_running) r = 0;
+  else r = 1;
+  tc_mutex_release();
+  return r;
 }
 
 /* end a waiting S_fork_alone with -2 */
