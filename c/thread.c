@@ -811,9 +811,6 @@ INT S_fork_hold_state(ptr thread) {
   tc_mutex_release();
   return r;
 }
-
-  tc_mutex_release();
-}
 #endif
 
 #ifndef PTHREADS
