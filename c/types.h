@@ -382,6 +382,7 @@ typedef struct {
     tc_mutex_acquire();\
     SETSYMVAL(S_G.active_threads_id,\
      FIX(UNFIX(SYMVAL(S_G.active_threads_id)) - 1));\
+    if (S_fork_waiters) s_thread_cond_broadcast(&S_fork_cond);\
     if (check_collect \
         && Sboolean_value(SYMVAL(S_G.collect_request_pending_id))  \
         && SYMVAL(S_G.active_threads_id) == FIX(0)) {\

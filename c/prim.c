@@ -191,6 +191,10 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)fixedpathp", (void *)S_fixedpathp);
     Sforeign_symbol("(cs)bytes_allocated", (void *)S_compute_bytes_allocated);
     Sforeign_symbol("(cs)thread_bytes_allocated", (void *)S_thread_bytes_allocated);
+#if defined(PTHREADS) && !defined(WIN32)
+    Sforeign_symbol("(cs)fork_alone", (void *)S_fork_alone);
+    Sforeign_symbol("(cs)fork_alone_cancel", (void *)S_fork_alone_cancel);
+#endif
     Sforeign_symbol("(cs)thread_bytes_uncount", (void *)S_thread_bytes_uncount);
     Sforeign_symbol("(cs)bytes_finalized", (void *)S_bytes_finalized);
     Sforeign_symbol("(cs)curmembytes", (void *)S_curmembytes);

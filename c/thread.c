@@ -52,6 +52,9 @@ void S_thread_init(void) {
     S_tc_mutex.count = 0;
     s_thread_cond_init(&S_collect_cond);
     s_thread_cond_init(&S_collect_thread0_cond);
+    s_thread_cond_init(&S_fork_cond);
+    S_fork_waiters = 0;
+    S_fork_cancel = 0;
     s_thread_mutex_init(&S_alloc_mutex.pmutex);
     s_thread_cond_init(&S_terminated_cond);
     S_alloc_mutex.owner = 0;
@@ -431,6 +434,7 @@ static IBOOL destroy_thread(ptr tc) {
       if (ACTIVE(tc)) {
         SETSYMVAL(S_G.active_threads_id,
          FIX(UNFIX(SYMVAL(S_G.active_threads_id)) - 1));
+        if (S_fork_waiters) s_thread_cond_broadcast(&S_fork_cond);
         if (Sboolean_value(SYMVAL(S_G.collect_request_pending_id))
             && SYMVAL(S_G.active_threads_id) == FIX(0)) {
           s_thread_cond_signal(&S_collect_cond);
@@ -737,6 +741,45 @@ IBOOL S_condition_wait(s_thread_cond_t *c, scheme_mutex_t *m, ptr t) {
   }
 }
 #endif /* PTHREADS */
+
+#if defined(PTHREADS) && !defined(WIN32)
+/* fork(2) once this is the one active thread: a process forked beside a thread running Scheme gets that
+   thread's half-done work in its copy of the heap, so the fork waits, under the tc mutex, for every other
+   thread to park (deactivate in a wait or a collect-safe call, or exit), woken by each one that does
+   (S_fork_cond), never by a clock. While it waits it is itself inactive, so a collection can run. It forks
+   with the tc mutex still held: no thread can reactivate across the fork. Answers the pid (0 in the child),
+   or -2 when S_fork_cancel ended the wait (S_fork_alone_cancel: the fork's own bound, its caller's).
+   A thread in a native call is counted active until converted, as a collection converts it. */
+INT S_fork_alone(void) {
+  ptr tc = get_thread_context();
+  scheme_mutex_t *m = &S_tc_mutex;
+  INT pid;
+  tc_mutex_acquire();
+  S_fork_waiters += 1;
+  for (;;) {
+    S_convert_native_threads();
+    if (S_fork_cancel) { S_fork_cancel = 0; S_fork_waiters -= 1; tc_mutex_release(); return -2; }
+    if (UNFIX(SYMVAL(S_G.active_threads_id)) <= 1) break;
+    deactivate_thread_signal_collect(tc, 1)
+    m->count = 0;
+    s_thread_cond_wait(&S_fork_cond, &m->pmutex);
+    m->owner = s_thread_self();
+    m->count = 1;
+    reactivate_thread(tc)
+  }
+  S_fork_waiters -= 1;
+  pid = fork();
+  tc_mutex_release();
+  return pid;
+}
+
+/* end a waiting S_fork_alone with -2 */
+void S_fork_alone_cancel(void) {
+  tc_mutex_acquire();
+  if (S_fork_waiters) { S_fork_cancel = 1; s_thread_cond_broadcast(&S_fork_cond); }
+  tc_mutex_release();
+}
+#endif
 
 #ifndef PTHREADS
 /* (cs)convert_native_threads is called by collect whatever the build;

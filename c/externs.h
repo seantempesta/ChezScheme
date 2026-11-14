@@ -67,6 +67,10 @@ extern void S_reset_allocation_pointer(ptr tc); /* call S_maybe_fire_collector a
 extern void S_maybe_fire_collector(thread_gc *tgc);
 extern ptr S_compute_bytes_allocated(ptr xg, ptr xs);
 extern uptr S_thread_bytes_allocated(void);
+#if defined(PTHREADS) && !defined(WIN32)
+extern INT S_fork_alone(void);
+extern void S_fork_alone_cancel(void);
+#endif
 extern void S_thread_bytes_uncount(uptr since);
 extern ptr S_bytes_finalized();
 extern ptr S_find_more_room(ISPC s, IGEN g, iptr n, ptr old);
