@@ -40,10 +40,9 @@ EXTERN scheme_mutex_t S_tc_mutex;
 EXTERN s_thread_cond_t S_collect_cond;
 EXTERN s_thread_cond_t S_collect_thread0_cond;
 /* a thread in S_fork_alone waits here, under the tc mutex, for the other threads to park: deactivation
-   and thread exit broadcast it while S_fork_waiters is nonzero; S_fork_cancel ends the wait */
+   and thread exit broadcast it while S_fork_waiters is nonzero */
 EXTERN s_thread_cond_t S_fork_cond;
 EXTERN iptr S_fork_waiters;
-EXTERN IBOOL S_fork_cancel;
 EXTERN INT S_tc_mutex_depth;  /* counts how many acquires are by kernel */
 EXTERN scheme_mutex_t S_alloc_mutex; /* ordered after S_tc_mutex */
 EXTERN INT S_alloc_mutex_depth;  /* counts how many acquires are by kernel */

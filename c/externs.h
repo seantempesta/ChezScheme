@@ -70,7 +70,6 @@ extern uptr S_thread_bytes_allocated(void);
 #if defined(PTHREADS) && !defined(WIN32)
 extern INT S_fork_alone(iptr bound_ms);
 extern INT S_fork_hold_state(ptr thread);
-extern void S_fork_alone_cancel(void);
 #endif
 extern void S_thread_bytes_uncount(uptr since);
 extern ptr S_bytes_finalized();

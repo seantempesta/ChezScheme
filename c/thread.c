@@ -54,7 +54,6 @@ void S_thread_init(void) {
     s_thread_cond_init(&S_collect_thread0_cond);
     s_thread_cond_init(&S_fork_cond);
     S_fork_waiters = 0;
-    S_fork_cancel = 0;
     s_thread_mutex_init(&S_alloc_mutex.pmutex);
     s_thread_cond_init(&S_terminated_cond);
     S_alloc_mutex.owner = 0;
@@ -750,9 +749,9 @@ IBOOL S_condition_wait(s_thread_cond_t *c, scheme_mutex_t *m, ptr t) {
 /* fork(2) once this is the one active thread: a process forked beside a thread running Scheme gets that
    thread's half-done work in its copy of the heap, so the fork waits, under the tc mutex, for every other
    thread to park (deactivate in a wait or a collect-safe call, or exit), woken by each one that does
-   (S_fork_cond), never by a clock. While it waits it is itself inactive, so a collection can run. It forks
+   (S_fork_cond); its one clock is the caller's bound. While it waits it is itself inactive, so a collection can run. It forks
    with the tc mutex still held: no thread can reactivate across the fork. Answers the pid (0 in the child),
-   or -2 when S_fork_cancel ended the wait (S_fork_alone_cancel), or -3 at bound_ms (none when negative):
+   or -3 at bound_ms (none when negative):
    every wait ends, and the caller names who held it (S_fork_hold_state).
    A thread in a native call is counted active until converted, as a collection converts it. */
 INT S_fork_alone(iptr bound_ms) {
@@ -773,7 +772,6 @@ INT S_fork_alone(iptr bound_ms) {
   NATIVE_FULL_FENCE();
   for (;;) {
     S_convert_native_threads();
-    if (S_fork_cancel) { S_fork_cancel = 0; S_fork_waiters -= 1; tc_mutex_release(); return -2; }
     if (UNFIX(SYMVAL(S_G.active_threads_id)) <= 1) break;
     deactivate_thread_signal_collect(tc, 1)
     m->count = 0;
@@ -812,10 +810,6 @@ INT S_fork_hold_state(ptr thread) {
   return r;
 }
 
-/* end a waiting S_fork_alone with -2 */
-void S_fork_alone_cancel(void) {
-  tc_mutex_acquire();
-  if (S_fork_waiters) { S_fork_cancel = 1; s_thread_cond_broadcast(&S_fork_cond); }
   tc_mutex_release();
 }
 #endif
