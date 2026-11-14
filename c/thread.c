@@ -365,9 +365,13 @@ void Sdeactivate_thread(void) { /* deactivate current thread */
   if (tgc->native_state != native_running) return;
   tgc->native_state = native_in_native;
   NATIVE_FULL_FENCE(); /* the mark is visible before the request is read */
-  if (Sboolean_value(*(volatile ptr *)&SYMVAL(S_G.collect_request_pending_id))) {
-    /* a collection is wanted: give up the thread's place now, as a
-       deactivation always did, unless a waiter already has */
+  if (Sboolean_value(*(volatile ptr *)&SYMVAL(S_G.collect_request_pending_id))
+      || *(volatile iptr *)&S_fork_waiters) {
+    /* a collection is wanted, or a fork waits (S_fork_alone): give up the
+       thread's place now, as a deactivation always did, unless a waiter
+       already has. The deactivation is what wakes them: a fork that had
+       looked before this mark and gone to wait would otherwise wait for good
+       beside a thread that runs no Scheme (a test child, 2026-11-14) */
     tc_mutex_acquire();
     if (native_state_cas(tgc, native_in_native, native_converted))
       deactivate_thread(tc)
@@ -756,6 +760,9 @@ INT S_fork_alone(void) {
   INT pid;
   tc_mutex_acquire();
   S_fork_waiters += 1;
+  /* the waiter count is visible before any thread's mark is read, so a thread
+     entering C either sees it (Sdeactivate_thread) or is seen here */
+  NATIVE_FULL_FENCE();
   for (;;) {
     S_convert_native_threads();
     if (S_fork_cancel) { S_fork_cancel = 0; S_fork_waiters -= 1; tc_mutex_release(); return -2; }
