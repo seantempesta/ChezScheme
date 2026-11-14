@@ -792,6 +792,12 @@ INT S_fork_alone(iptr bound_ms) {
   }
   S_fork_waiters -= 1;
   pid = fork();
+  if (pid == 0) {
+    /* the child is this one thread: no fork waits in it, and the condition copied from the parent may list waiters
+       (another thread's S_fork_alone) that do not exist here, which POSIX leaves undefined to signal */
+    S_fork_waiters = 0;
+    s_thread_cond_init(&S_fork_cond);
+  }
   tc_mutex_release();
   return pid;
 }
