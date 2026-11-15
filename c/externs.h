@@ -71,6 +71,7 @@ extern ptr S_foreign_lookups(void);
 extern void S_count_foreign_lookup(const char *s);
 #ifndef WIN32
 extern int S_sigsender_install(int fd, int sig);
+extern int S_sigsender_reset(int sig);
 #endif
 #if defined(PTHREADS) && !defined(WIN32)
 extern INT S_fork_alone(iptr bound_ms);

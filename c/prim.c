@@ -195,6 +195,7 @@ void S_prim_init(void) {
     Sforeign_symbol("(cs)count_foreign_lookup", (void *)S_count_foreign_lookup);
 #ifndef WIN32
     Sforeign_symbol("(cs)sigsender_install", (void *)S_sigsender_install);
+    Sforeign_symbol("(cs)sigsender_reset", (void *)S_sigsender_reset);
 #endif
 #if defined(PTHREADS) && !defined(WIN32)
     Sforeign_symbol("(cs)fork_alone", (void *)S_fork_alone);

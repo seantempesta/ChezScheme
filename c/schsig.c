@@ -679,14 +679,24 @@ static void sigsender_handler(int sig, siginfo_t *si, void *uc) {
   b[0] = sig; b[1] = si ? (int)si->si_pid : 0; b[2] = si ? (int)si->si_uid : 0;
   if (sigsender_fd >= 0) { ssize_t r = write(sigsender_fd, b, sizeof b); (void)r; }
 }
+#define SIGSENDER_MAX 65
+static struct sigaction sigsender_old[SIGSENDER_MAX];
 int S_sigsender_install(int fd, int sig) {
   struct sigaction sa;
+  if (sig <= 0 || sig >= SIGSENDER_MAX) return -1;
   memset(&sa, 0, sizeof sa);
   sa.sa_sigaction = sigsender_handler;
   sa.sa_flags = SA_SIGINFO | SA_RESTART;
   sigemptyset(&sa.sa_mask);
   sigsender_fd = fd;
-  return sigaction(sig, &sa, NULL);
+  return sigaction(sig, &sa, &sigsender_old[sig]);
+}
+/* (cs)sigsender_reset sig: SIG's action as it was before install, for a forked child, which is not the process the
+   watcher reads for: it is left exactly as it was before the sender existed. */
+int S_sigsender_reset(int sig) {
+  if (sig <= 0 || sig >= SIGSENDER_MAX) return -1;
+  sigsender_fd = -1;
+  return sigaction(sig, &sigsender_old[sig], NULL);
 }
 
 static void handle_signal(INT sig, siginfo_t *si, void *data);
