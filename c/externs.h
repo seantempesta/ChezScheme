@@ -69,6 +69,9 @@ extern ptr S_compute_bytes_allocated(ptr xg, ptr xs);
 extern uptr S_thread_bytes_allocated(void);
 extern ptr S_foreign_lookups(void);
 extern void S_count_foreign_lookup(const char *s);
+#ifndef WIN32
+extern int S_sigsender_install(int fd, int sig);
+#endif
 #if defined(PTHREADS) && !defined(WIN32)
 extern INT S_fork_alone(iptr bound_ms);
 extern INT S_fork_hold_state(ptr thread);

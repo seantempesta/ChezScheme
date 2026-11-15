@@ -668,6 +668,27 @@ static void init_signal_handlers(void) {
 
 #include <signal.h>
 
+/* (cs)sigsender_install fd sig: SIG's handler writes {sig, sender pid, sender uid} (three ints) to fd, where Jolt's
+   signal watcher reads it, so a process says who ended it (sigwait gives only the number, and macOS has no
+   sigwaitinfo). Async-signal-safe: one write(2) of a stack buffer. The watcher alone unmasks the signal, so the kernel
+   delivers it on that thread. A child installs its own fd when it arms. */
+static int sigsender_fd = -1;
+static void sigsender_handler(int sig, siginfo_t *si, void *uc) {
+  int b[3];
+  (void)uc;
+  b[0] = sig; b[1] = si ? (int)si->si_pid : 0; b[2] = si ? (int)si->si_uid : 0;
+  if (sigsender_fd >= 0) { ssize_t r = write(sigsender_fd, b, sizeof b); (void)r; }
+}
+int S_sigsender_install(int fd, int sig) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof sa);
+  sa.sa_sigaction = sigsender_handler;
+  sa.sa_flags = SA_SIGINFO | SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  sigsender_fd = fd;
+  return sigaction(sig, &sa, NULL);
+}
+
 static void handle_signal(INT sig, siginfo_t *si, void *data);
 static IBOOL enqueue_scheme_signal(ptr tc, INT sig);
 static ptr allocate_scheme_signal_queue(void);
