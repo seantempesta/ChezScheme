@@ -279,12 +279,20 @@ static void load_shared_object(const char *path) {
    process spending half its time there named nobody. S_foreign_lookups answers the counts;
    S_count_foreign_lookup, (cs)count_foreign_lookup, counts a lookup made elsewhere (Jolt's own dlsym
    walk over its declared natives, where a cfn resolves), into the one table. A fixed table,
-   one slot a name (its first 63 bytes), probed linearly; a full table counts the rest in its last slot. */
-#define LOOKUP_SLOTS 256
+   one slot a name (its first 63 bytes), probed linearly from its FNV-1a hash; 4096 slots, since a Jolt
+   boot alone resolves some 300 names (256 filled at load); a full table counts the rest in its last slot. */
+#define LOOKUP_SLOTS 4096
 static struct { char name[64]; uptr count; } lookup_counts[LOOKUP_SLOTS];
 
+/* FNV-1a over the name: its own full hash (symhash is reduced to the foreign table's buckets) */
+static uptr lookup_hash(const char *s) {
+  uptr h = 2166136261u;
+  for (; *s; s++) { h ^= (unsigned char)*s; h *= 16777619u; }
+  return h;
+}
+
 void S_count_foreign_lookup(const char *s) {
-  iptr b = symhash(s) % LOOKUP_SLOTS, i;
+  iptr b = (iptr)(lookup_hash(s) % (LOOKUP_SLOTS - 1)), i;
   tc_mutex_acquire();
   for (i = 0; i < LOOKUP_SLOTS - 1; i++) {
     iptr k = (b + i) % (LOOKUP_SLOTS - 1);
