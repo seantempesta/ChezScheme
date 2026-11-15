@@ -274,6 +274,44 @@ static void load_shared_object(const char *path) {
 }
 #endif /* LOAD_SHARED_OBJECT */
 
+/* Each foreign-procedure evaluation's lookup, counted by name (jolt, 2026-11-15): a procedure resolved on
+   every call is a dlsym walk over every loaded object each time (lookup() caches no dynamic symbol), and a
+   process spending half its time there named nobody. S_foreign_lookups answers the counts. A fixed table,
+   one slot a name (its first 63 bytes), probed linearly; a full table counts the rest in its last slot. */
+#define LOOKUP_SLOTS 256
+static struct { char name[64]; uptr count; } lookup_counts[LOOKUP_SLOTS];
+
+static void count_lookup(const char *s) {
+  iptr b = symhash(s) % LOOKUP_SLOTS, i;
+  tc_mutex_acquire();
+  for (i = 0; i < LOOKUP_SLOTS - 1; i++) {
+    iptr k = (b + i) % (LOOKUP_SLOTS - 1);
+    if (lookup_counts[k].name[0] == 0) {
+      strncpy(lookup_counts[k].name, s, sizeof(lookup_counts[k].name) - 1);
+      lookup_counts[k].count = 1;
+      break;
+    }
+    if (strncmp(lookup_counts[k].name, s, sizeof(lookup_counts[k].name) - 1) == 0) {
+      lookup_counts[k].count += 1;
+      break;
+    }
+  }
+  if (i == LOOKUP_SLOTS - 1) {
+    strcpy(lookup_counts[LOOKUP_SLOTS - 1].name, "(other names)");
+    lookup_counts[LOOKUP_SLOTS - 1].count += 1;
+  }
+  tc_mutex_release();
+}
+
+ptr S_foreign_lookups(void) {
+  ptr ls = Snil;
+  iptr k;
+  for (k = 0; k < LOOKUP_SLOTS; k++)
+    if (lookup_counts[k].name[0] != 0)
+      ls = Scons(Scons(Sstring_utf8(lookup_counts[k].name, -1), Sunsigned(lookup_counts[k].count)), ls);
+  return ls;
+}
+
 void S_foreign_entry(void) {
     ptr tc = get_thread_context();
     ptr name, x, bvname;
@@ -298,6 +336,7 @@ void S_foreign_entry(void) {
     }
     BVIT(bvname, n) = 0;
 
+    count_lookup((char *)&BVIT(bvname, 0));
     if ((x = lookup((char *)&BVIT(bvname, 0))) == addr_to_ptr(0)) {
         S_error1("foreign-procedure", "no entry for ~s", name);
     }
