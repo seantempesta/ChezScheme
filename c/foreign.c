@@ -276,12 +276,14 @@ static void load_shared_object(const char *path) {
 
 /* Each foreign-procedure evaluation's lookup, counted by name (jolt, 2026-11-15): a procedure resolved on
    every call is a dlsym walk over every loaded object each time (lookup() caches no dynamic symbol), and a
-   process spending half its time there named nobody. S_foreign_lookups answers the counts. A fixed table,
+   process spending half its time there named nobody. S_foreign_lookups answers the counts;
+   S_count_foreign_lookup, (cs)count_foreign_lookup, counts a lookup made elsewhere (Jolt's own dlsym
+   walk over its declared natives, where a cfn resolves), into the one table. A fixed table,
    one slot a name (its first 63 bytes), probed linearly; a full table counts the rest in its last slot. */
 #define LOOKUP_SLOTS 256
 static struct { char name[64]; uptr count; } lookup_counts[LOOKUP_SLOTS];
 
-static void count_lookup(const char *s) {
+void S_count_foreign_lookup(const char *s) {
   iptr b = symhash(s) % LOOKUP_SLOTS, i;
   tc_mutex_acquire();
   for (i = 0; i < LOOKUP_SLOTS - 1; i++) {
@@ -336,7 +338,7 @@ void S_foreign_entry(void) {
     }
     BVIT(bvname, n) = 0;
 
-    count_lookup((char *)&BVIT(bvname, 0));
+    S_count_foreign_lookup((char *)&BVIT(bvname, 0));
     if ((x = lookup((char *)&BVIT(bvname, 0))) == addr_to_ptr(0)) {
         S_error1("foreign-procedure", "no entry for ~s", name);
     }
